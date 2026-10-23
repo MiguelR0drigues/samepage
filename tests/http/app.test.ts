@@ -44,6 +44,18 @@ describe('HTTP auth', () => {
   });
 });
 
+describe('MCP transport', () => {
+  it('answers with plain JSON, not an SSE stream (the Worker closes its DB pool once the response returns)', async () => {
+    const res = await app.request('/mcp', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer t-miguel', 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '0' } } }),
+    });
+    expect(res.headers.get('content-type')).toContain('application/json');
+    expect(((await res.json()) as { result: { serverInfo: { name: string } } }).result.serverInfo.name).toBe('samepage');
+  });
+});
+
 describe('MCP tools', () => {
   it('lists the 10 tools', async () => {
     const { tools } = await (await connect('t-miguel')).listTools();

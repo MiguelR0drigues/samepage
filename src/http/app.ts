@@ -29,8 +29,9 @@ export function createApp(getStore: (env: Env) => Store) {
   });
 
   app.all('/mcp', async (c) => {
-    const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+    const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     await buildMcpServer(c.get('store'), c.get('person')).connect(transport);
+    // JSON (not SSE) so the response is complete when handleRequest resolves; the Worker closes its DB pool right after.
     return transport.handleRequest(c.req.raw);
   });
 

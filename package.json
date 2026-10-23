@@ -10,7 +10,8 @@
     "db:export": "tsx scripts/export.ts",
     "db:import": "tsx scripts/import.ts",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate": "drizzle-kit migrate",
+    "deploy": "wrangler deploy"
   },
   "dependencies": {
     "@modelcontextprotocol/client": "2.4.0",
