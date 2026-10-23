@@ -9,7 +9,8 @@ export interface Store {
   listPeople(): Promise<Person[]>;
   addPerson(p: { id: string; name: string; isSystem: boolean }, tokenHash: string): Promise<Person>;
   touchLastSeen(personId: string, at: Date): Promise<void>;
-  getEntry(id: string): Promise<Entry | null>;                  // includes deleted
+  // Includes deleted. forUpdate locks the row (SELECT ... FOR UPDATE) until the transaction ends: call it inside transaction() to serialize concurrent changes.
+  getEntry(id: string, opts?: { forUpdate?: boolean }): Promise<Entry | null>;
   listEntries(f: EntryFilter): Promise<Entry[]>;                 // excludes deleted, newest first, limit default 20
   search(q: string, f: { area?: string; limit?: number }): Promise<Entry[]>; // excludes deleted
   changesSince(since: Date, excludePersonId: string): Promise<Change[]>;

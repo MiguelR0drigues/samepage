@@ -108,4 +108,22 @@ describe('PostgresStore', () => {
     expect(await fresh.exportAll()).toEqual(snap);
     await expect(store.importAll(snap)).rejects.toThrow();
   });
+
+  it('getEntry with forUpdate runs inside a transaction and returns the entry', async () => {
+    const e = await store.insertEntry(base({ authors: ['miguel'] }));
+    const got = await store.transaction((tx) => tx.getEntry(e.id, { forUpdate: true }));
+    expect(got).toEqual(e);
+    expect(await store.getEntry('00000000-0000-0000-0000-000000000000', { forUpdate: true })).toBeNull();
+  });
+
+  it('insertEntry with an unknown author throws and leaves no entry', async () => {
+    await expect(store.insertEntry(base({ authors: ['ghost'] }))).rejects.toThrow();
+    expect(await store.listEntries({})).toEqual([]);
+  });
+
+  it('updateEntry with an unknown author throws and leaves the entry unchanged', async () => {
+    const e = await store.insertEntry(base({ authors: ['miguel', 'joao'] }));
+    await expect(store.updateEntry(e.id, { title: 'changed', authors: ['ghost'] }, 'joao')).rejects.toThrow();
+    expect(await store.getEntry(e.id)).toEqual(e);
+  });
 });

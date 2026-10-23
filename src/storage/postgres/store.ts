@@ -49,8 +49,9 @@ export class PostgresStore implements Store {
     await this.db.update(people).set({ lastSeenAt: at }).where(eq(people.id, personId));
   }
 
-  async getEntry(id: string) {
-    const [row] = await this.db.select().from(entries).where(eq(entries.id, id));
+  async getEntry(id: string, opts?: { forUpdate?: boolean }) {
+    const q = this.db.select().from(entries).where(eq(entries.id, id));
+    const [row] = await (opts?.forUpdate ? q.for('update') : q);
     return row ? (await this.withAuthors([row]))[0]! : null;
   }
 
@@ -94,21 +95,28 @@ export class PostgresStore implements Store {
     return changes;
   }
 
-  async insertEntry(e: NewEntry) {
+  // Row + authors are written in one transaction (a savepoint when already inside one), so a bad author id leaves nothing behind.
+  insertEntry(e: NewEntry): Promise<Entry> {
     const { authors, ...row } = e;
-    const [inserted] = await this.db.insert(entries).values(row).returning();
-    await this.setAuthors(inserted!.id, authors);
-    return (await this.getEntry(inserted!.id))!;
+    return this.db.transaction(async (tx) => {
+      const store = new PostgresStore(tx);
+      const [inserted] = await tx.insert(entries).values(row).returning();
+      await store.setAuthors(inserted!.id, authors);
+      return (await store.getEntry(inserted!.id))!;
+    });
   }
 
-  async updateEntry(id: string, patch: EntryPatch, by: string) {
+  updateEntry(id: string, patch: EntryPatch, by: string): Promise<Entry> {
     const { authors, ...cols } = patch;
-    const [updated] = await this.db.update(entries)
-      .set({ ...cols, updatedAt: new Date(), updatedBy: by })
-      .where(eq(entries.id, id)).returning({ id: entries.id });
-    if (!updated) throw new Error(`Entry not found: ${id}`);
-    if (authors) await this.setAuthors(id, authors);
-    return (await this.getEntry(id))!;
+    return this.db.transaction(async (tx) => {
+      const store = new PostgresStore(tx);
+      const [updated] = await tx.update(entries)
+        .set({ ...cols, updatedAt: new Date(), updatedBy: by })
+        .where(eq(entries.id, id)).returning({ id: entries.id });
+      if (!updated) throw new Error(`Entry not found: ${id}`);
+      if (authors) await store.setAuthors(id, authors);
+      return (await store.getEntry(id))!;
+    });
   }
 
   transaction<T>(fn: (tx: Store) => Promise<T>): Promise<T> {
