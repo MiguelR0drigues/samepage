@@ -59,14 +59,37 @@ describe('sessionSummary', () => {
     expect(second).toContain('- new: Later view (by joao)');
   });
 
-  it('never exceeds 2000 characters', async () => {
-    for (let i = 0; i < 50; i++) {
+  it('never exceeds 2000 characters and keeps the footer, header and newest sections', async () => {
+    await store.touchLastSeen('miguel', new Date(Date.now() - 60_000));
+    for (let i = 0; i < 30; i++) {
       await memory.record(miguel, { type: 'principle', title: `Principle ${i}`, content: 'long '.repeat(80), area: 'p' });
     }
-    const text = await sessionSummary(store, miguel, new Date());
+    await memory.record(miguel, { type: 'decision', title: 'Use Neon', content: 'We use Neon.', area: 'infra' });
+    await memory.record(joao, { type: 'view', title: 'Joao view', content: 'x', area: 'a' });
+
+    const text = await sessionSummary(store, await fresh('miguel'), new Date());
+    const lines = text.split('\n');
     expect(text.length).toBeLessThanOrEqual(2000);
-    expect(text.endsWith('\n')).toBe(false);
-    const last = text.split('\n').at(-1)!;
-    expect(last.startsWith('- Principle ') && last.endsWith('long')).toBe(true);
+    expect(lines[0]).toBe('# Team memory (SamePage)');
+    expect(lines.at(-1)).toBe('Use the samepage tools for details.');
+    expect(text).toContain('- new: Joao view (by joao)');
+    expect(text).toContain('- [');
+    lines.forEach((l, i) => {
+      if (l.startsWith('## ')) expect(lines[i + 1]).toMatch(/^- /);
+    });
+  });
+
+  it('deleted principles and decisions are not listed', async () => {
+    const p = await memory.record(miguel, { type: 'principle', title: 'Gone principle', content: 'x', area: 'p' });
+    const d = await memory.record(miguel, { type: 'decision', title: 'Gone decision', content: 'x', area: 'a' });
+    await memory.record(miguel, { type: 'principle', title: 'Kept principle', content: 'x', area: 'p' });
+    await memory.remove(miguel, p.id);
+    await memory.remove(miguel, d.id);
+
+    const text = await sessionSummary(store, miguel, new Date());
+    expect(text).toContain('Kept principle');
+    expect(text).not.toContain('Gone principle');
+    expect(text).not.toContain('Gone decision');
+    expect(text).not.toContain('## Recent decisions');
   });
 });

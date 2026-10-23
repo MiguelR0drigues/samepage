@@ -29,13 +29,21 @@ export async function sessionSummary(store: Store, person: Person, now: Date): P
     ['Open proposals', proposalLines],
   ];
 
-  const lines = ['# Team memory (SamePage)'];
-  for (const [title, items] of sections) if (items.length) lines.push(`## ${title}`, ...items);
-  lines.push('Use the samepage tools for details.');
+  const render = () => [
+    '# Team memory (SamePage)',
+    ...sections.flatMap(([title, items]) => (items.length ? [`## ${title}`, ...items] : [])),
+    'Use the samepage tools for details.',
+  ].join('\n');
 
   await store.touchLastSeen(person.id, now);
 
-  // Cut whole lines from the end until it fits.
-  while (lines.join('\n').length > MAX_CHARS) lines.pop();
-  return lines.join('\n');
+  // Over budget: drop the last (least important) item, taking from sections in priority order. Header and footer always stay.
+  let text = render();
+  while (text.length > MAX_CHARS) {
+    const section = sections.find(([, items]) => items.length);
+    if (!section) break;
+    section[1].pop();
+    text = render();
+  }
+  return text;
 }
