@@ -1,4 +1,4 @@
-# CollabDB Phase 1 (Core) Implementation Plan
+# SamePage Phase 1 (Core) Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -12,6 +12,7 @@
 
 ## Global Constraints
 
+- **Product name: SamePage** (package `samepage`, MCP server name `samepage`, env vars `SAMEPAGE_URL`/`SAMEPAGE_TOKEN`). The repo folder stays `CollabDB`.
 - **Everything in English:** code, identifiers, enum values, MCP tool names and parameters, error messages, server instructions, summary text, READMEs and commit messages.
 - Zero monetary cost: free tiers only. **No Vercel Hobby plan.**
 - The MCP server **never calls AI models**. It only reads and writes data.
@@ -240,7 +241,7 @@ export class Memory {
 Format, with empty sections omitted and the whole text cut to 2000 characters (cut whole lines, never mid-line):
 
 ```
-# Team memory (CollabDB)
+# Team memory (SamePage)
 ## Principles
 - <title>: <content up to 200 chars>
 ## Recent decisions
@@ -249,7 +250,7 @@ Format, with empty sections omitted and the whole text cut to 2000 characters (c
 - <new|changed|removed>: <title> (by <person>)
 ## Open proposals
 - [<short id>] <title> → revises "<target decision title>"
-Use the collabdb tools for details.
+Use the samepage tools for details.
 ```
 
 Limits: 5 recent decisions, 8 changes, 5 proposals. Without `lastSeenAt` (first session), the "New since your last session" section is omitted.
@@ -318,7 +319,7 @@ Shared team memory: decisions, personal views, principles and explorations about
   - `record then search_context`: record "Per-seat pricing", then `search_context({query:'pricing'})`. The text contains the title and the author `miguel`.
   - `rule errors come back as isError`: `record` with `authors:['ana']` → `isError: true` and the text contains `Unknown authors`.
   - `authorship comes from the token`: joao's token → `record` → the entry has `recordedBy` equal to `joao`.
-  - `GET /summary returns text with the header` `# Team memory (CollabDB)`.
+  - `GET /summary returns text with the header` `# Team memory (SamePage)`.
 - [ ] **Step 2:** Run `npx vitest run tests/http/app.test.ts`. Expected: FAIL.
 - [ ] **Step 3:** Implement `format.ts`, `server.ts` and `app.ts`.
 - [ ] **Step 4:** Run `npx vitest run && npm run typecheck`. Expected: PASS.
@@ -355,20 +356,21 @@ Shared team memory: decisions, personal views, principles and explorations about
 
 **Files:**
 - Create: `integrations/claude-code/session-start.mjs`, `integrations/claude-code/mcp.json`, `integrations/claude-code/settings.json`, `integrations/claude-code/README.md`
+- Modify: `package.json` (`"name": "samepage"`)
 - Test: `tests/integrations/session-start.test.ts`
 
 **Interfaces:**
 - Consumes: `GET /summary` (Task 5).
 - `session-start.mjs`: plain Node, no dependencies.
-  - Reads `COLLABDB_URL` and `COLLABDB_TOKEN` from the environment and calls `fetch(URL + '/summary')` with a 5 s timeout (`AbortSignal.timeout(5000)`).
+  - Reads `SAMEPAGE_URL` and `SAMEPAGE_TOKEN` from the environment and calls `fetch(URL + '/summary')` with a 5 s timeout (`AbortSignal.timeout(5000)`).
   - On a 200 response, writes the body to stdout.
   - In **any** other case (missing variables, network error, non-200 status, timeout), writes nothing and exits 0.
 - `mcp.json` (to copy to `.mcp.json` at the root of each company repo):
-  `{"mcpServers":{"collabdb":{"type":"http","url":"${COLLABDB_URL}/mcp","headers":{"Authorization":"Bearer ${COLLABDB_TOKEN}"}}}}`
-- `settings.json` (to merge into the repo's `.claude/settings.json`): a `SessionStart` hook with the command `node .claude/collabdb/session-start.mjs`.
+  `{"mcpServers":{"samepage":{"type":"http","url":"${SAMEPAGE_URL}/mcp","headers":{"Authorization":"Bearer ${SAMEPAGE_TOKEN}"}}}}`
+- `settings.json` (to merge into the repo's `.claude/settings.json`): a `SessionStart` hook with the command `node .claude/samepage/session-start.mjs`.
 - `README.md`, short:
-  - each person sets `COLLABDB_URL` and `COLLABDB_TOKEN` as user environment variables (never in the repo);
-  - in each company repo: copy `mcp.json` to `.mcp.json`, copy `session-start.mjs` to `.claude/collabdb/`, and merge `settings.json`;
+  - each person sets `SAMEPAGE_URL` and `SAMEPAGE_TOKEN` as user environment variables (never in the repo);
+  - in each company repo: copy `mcp.json` to `.mcp.json`, copy `session-start.mjs` to `.claude/samepage/`, and merge `settings.json`;
   - commit those files to the company repo.
 
 - [ ] **Step 1: Write the failing tests.** Run the script with `child_process.spawn` and a controlled `env`:
@@ -399,7 +401,7 @@ Shared team memory: decisions, personal views, principles and explorations about
 - [ ] **Step 3:** Create the team members and the system person `meet` with `npm run person:add`. Hand each person their token through a private channel.
 - [ ] **Step 4:** Run `npx wrangler secret put DATABASE_URL` and `npm run deploy`. Then `curl https://<worker>/health` must return `ok`, and `curl -H "Authorization: Bearer <token>" https://<worker>/summary` must return the summary header.
 - [ ] **Step 5:** Real check in a test repo with the Task 7 integration:
-  - open Claude Code: the summary appears in context and `/mcp` shows `collabdb` connected;
+  - open Claude Code: the summary appears in context and `/mcp` shows `samepage` connected;
   - ask "record this: we decided to use Neon, with <teammate>": the entry appears with both authors;
   - on another machine or with another token, open a session: the change appears in the summary.
 - [ ] **Step 6:** Commit `feat: deploy to Cloudflare Workers with Neon`.

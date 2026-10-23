@@ -1,4 +1,4 @@
-# CollabDB — Memória partilhada da equipa para agentes de IA
+# SamePage — Memória partilhada da equipa para agentes de IA
 
 Documento de desenho · 2026-10-24 · Autor: Miguel Rodrigues (com Claude)
 
@@ -6,7 +6,7 @@ Documento de desenho · 2026-10-24 · Autor: Miguel Rodrigues (com Claude)
 
 Os co-founders tomam decisões em muitos sítios: Google Meet, WhatsApp, conversas presenciais e conversas com os próprios agentes de IA. Depois, cada um tem de repetir esse contexto ao seu agente (Claude Code, Codex, ChatGPT, Claude, Gemini, Hermes...). As pessoas acabam por ser o mecanismo de sincronização. Isso dá trabalho repetido e, com o tempo, os contextos de cada agente afastam-se uns dos outros.
 
-O CollabDB é uma **fonte única de verdade** sobre decisões, visão e contexto da empresa. Os agentes de toda a equipa leem dela e alimentam-na. A partilha deve acontecer **por baixo, sem esforço**: ninguém deve ter de "ensinar" a mesma decisão várias vezes.
+O SamePage é uma **fonte única de verdade** sobre decisões, visão e contexto da empresa. Os agentes de toda a equipa leem dela e alimentam-na. A partilha deve acontecer **por baixo, sem esforço**: ninguém deve ter de "ensinar" a mesma decisão várias vezes.
 
 Serve a empresa toda, não só engenharia: produto, roadmap, marketing, posicionamento e tom de voz.
 
