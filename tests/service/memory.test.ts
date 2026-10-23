@@ -72,10 +72,29 @@ describe('Memory.remove / correctText', () => {
       .rejects.toThrow('A decision verdict cannot be edited: use supersede_decision or propose_revision.');
   });
 
-  it('an author can correct the title, others cannot', async () => {
-    const e = await memory.record(miguel, decision());
-    expect((await memory.correctText(miguel, e.id, { title: 'Use Neon DB' })).title).toBe('Use Neon DB');
+  it('an author can correct the title, others cannot, omitted fields stay unchanged', async () => {
+    const positions = [{ person: 'miguel', position: 'yes' }];
+    const e = await memory.record(miguel, decision({ question: 'Which DB?', positions, consensusReason: 'why' }));
+    const u = await memory.correctText(miguel, e.id, { title: 'Use Neon DB' });
+    expect(u).toMatchObject({ title: 'Use Neon DB', content: 'We use Neon.', question: 'Which DB?', positions, consensusReason: 'why' });
     await expect(memory.correctText(joao, e.id, { title: 'x' })).rejects.toBeInstanceOf(MemoryError);
+  });
+
+  it('deleting an open proposal restores its target to active', async () => {
+    const old = await memory.record(miguel, decision());
+    const p = await memory.proposeRevision(joao, old.id, { title: 't', content: 'c', justification: 'j' });
+    await memory.remove(joao, p.id);
+    expect((await store.getEntry(p.id))?.deletedAt).not.toBeNull();
+    expect((await store.getEntry(old.id))?.status).toBe('active');
+    await expect(memory.proposeRevision(joao, old.id, { title: 't2', content: 'c', justification: 'j' })).resolves.toBeDefined();
+  });
+
+  it('cannot delete a decision that is under review', async () => {
+    const old = await memory.record(miguel, decision());
+    await memory.proposeRevision(joao, old.id, { title: 't', content: 'c', justification: 'j' });
+    await expect(memory.remove(miguel, old.id)).rejects.toThrow('Close the open proposal for this decision first.');
+    const after = await store.getEntry(old.id);
+    expect(after).toMatchObject({ status: 'under_review', deletedAt: null });
   });
 
   it('content of a non-decision can be corrected', async () => {
@@ -186,6 +205,20 @@ describe('proposals', () => {
     const { old } = await openProposal();
     await expect(memory.proposeRevision(joao, old.id, { title: 't', content: 'c', justification: 'j' }))
       .rejects.toThrow('This decision already has an open proposal.');
+  });
+
+  it('a system actor cannot propose a revision', async () => {
+    const old = await memory.record(miguel, decision());
+    await expect(memory.proposeRevision(meet, old.id, { title: 't', content: 'c', justification: 'j' }))
+      .rejects.toBeInstanceOf(MemoryError);
+    expect((await store.getEntry(old.id))?.status).toBe('active');
+  });
+
+  it('a system actor superseding a team decision creates a proposal with the given authors', async () => {
+    const old = await memory.record(miguel, decision(team));
+    const { entry, outcome } = await memory.supersede(meet, old.id, decision({ authors: ['joao'], sourceKind: 'claude_code' }));
+    expect(outcome).toBe('proposal');
+    expect(entry.authors).toEqual(['joao']);
   });
 
   it('a system actor cannot accept or reject', async () => {

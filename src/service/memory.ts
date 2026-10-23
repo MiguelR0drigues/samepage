@@ -68,9 +68,18 @@ export class Memory {
   }
 
   async remove(actor: Person, id: string): Promise<void> {
-    const e = await load(this.store, id);
-    assertAuthor(actor, e);
-    await this.store.updateEntry(id, { deletedAt: new Date(), deletedBy: actor.id }, actor.id);
+    await this.store.transaction(async (tx) => {
+      const e = await load(tx, id, { forUpdate: true });
+      assertAuthor(actor, e);
+      if (e.type === 'decision' && e.status === 'under_review') {
+        throw new MemoryError('Close the open proposal for this decision first.');
+      }
+      await tx.updateEntry(id, { deletedAt: new Date(), deletedBy: actor.id }, actor.id);
+      // Deleting an open proposal must not leave its target stuck in review.
+      if (e.type === 'proposal' && e.status === 'open' && e.targetId) {
+        await tx.updateEntry(e.targetId, { status: 'active' }, actor.id);
+      }
+    });
   }
 
   async supersede(actor: Person, oldId: string, input: RecordInput): Promise<{ entry: Entry; outcome: 'superseded' | 'proposal' }> {
@@ -84,13 +93,14 @@ export class Memory {
         await tx.updateEntry(old.id, { status: 'superseded' }, actor.id);
         return { entry, outcome: 'superseded' as const };
       }
-      const entry = await tx.insertEntry({ ...next, type: 'proposal', status: 'open', authors: [actor.id], targetId: old.id });
+      const entry = await tx.insertEntry({ ...next, type: 'proposal', status: 'open', targetId: old.id });
       await tx.updateEntry(old.id, { status: 'under_review' }, actor.id);
       return { entry, outcome: 'proposal' as const };
     });
   }
 
   async proposeRevision(actor: Person, decisionId: string, input: { title: string; content: string; justification: string }): Promise<Entry> {
+    assertHuman(actor);
     return this.store.transaction(async (tx) => {
       const old = await load(tx, decisionId, { forUpdate: true });
       if (old.type === 'decision' && old.status === 'under_review') {
