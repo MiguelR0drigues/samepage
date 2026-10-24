@@ -100,6 +100,35 @@ export class Capture {
     });
   }
 
+  // /off-record: undoes what this person's session added. Text corrections it made to older entries ('updates') stay.
+  async forgetSession(actor: Person, sessionRef: string): Promise<{ removed: number; kept: number; pending: number }> {
+    assertHuman(actor);
+    return this.store.transaction(async (tx) => {
+      const memory = new Memory(tx);
+      const r = { removed: 0, kept: 0, pending: 0 };
+      // newest first, so a replacement goes before the entry it replaced
+      for (const e of await tx.listEntries({ sourceRef: sessionRef, limit: 100 })) {
+        if (e.recordedBy !== actor.id) continue;
+        try {
+          await memory.remove(actor, e.id);
+        } catch (err) {
+          if (!(err instanceof MemoryError)) throw err;
+          r.kept++; // e.g. a decision someone else has an open proposal on
+          continue;
+        }
+        r.removed++;
+        const old = await find(tx, e.supersedesId);
+        if (old?.status === 'superseded') await tx.updateEntry(old.id, { status: 'active' }, actor.id);
+      }
+      for (const p of await tx.listPending(actor.id, 100)) {
+        if (p.sourceRef !== sessionRef) continue;
+        await tx.answerPending(p.id, 'skip', new Date());
+        r.pending++;
+      }
+      return r;
+    });
+  }
+
   async answerPending(actor: Person, id: string, answer: PendingAnswer, type?: CandidateType): Promise<{ pending: Pending; entry: Entry | null }> {
     assertHuman(actor);
     return this.store.transaction(async (tx) => {

@@ -254,6 +254,15 @@ describe('/extractor', () => {
     expect(p!.question).toContain('Is it? — view: "Seats win"');
   });
 
+  it('/extractor/forget-session removes what the session recorded', async () => {
+    await apply({ session_ref: 's1', items: [item] });
+    const forget = (body: unknown) => app.request('/extractor/forget-session', { method: 'POST', headers, body: JSON.stringify(body) });
+    expect((await forget({})).status).toBe(400);
+    const res = await forget({ session_ref: 's1' });
+    expect(await res.json()).toEqual({ removed: 1, kept: 0, pending: 0 });
+    expect(await store.listEntries({})).toEqual([]);
+  });
+
   it('/extractor/apply rejects a malformed body with 400', async () => {
     for (const body of [null, {}, { session_ref: 's1', items: Array(21).fill(item) }, { session_ref: 's1', items: [{ ...item, title: 'x'.repeat(4001) }] }]) {
       const res = await apply(body);

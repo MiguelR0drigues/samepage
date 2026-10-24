@@ -51,7 +51,7 @@ An install made before automatic updates existed gets them after one more run of
 Capture runs only in the folders you chose (and their subfolders). When a session ends, or has been idle for a while, a local `claude -p` pass reads the conversation and keeps only what the team would want to know later. The bar is high, so most sessions produce nothing.
 - What it finds is sent to SamePage as entries. Anything it is unsure about becomes a pending question, which Claude puts to you on your next prompt.
 - **The conversation never leaves your machine; only the extracted entries are sent.**
-- Type `/private` in a session and that session is never processed.
+- Type `/off-record` in a session and it is no longer processed; what was already captured from it is removed (text corrections it made to older entries stay).
 - Type `/forget` and everything up to now that was not yet captured is dropped.
 - Entries can be deleted with a reason (`delete_entry`).
 - The desktop app shows these as "a hook blocked your prompt": that is expected, nothing reached Claude.

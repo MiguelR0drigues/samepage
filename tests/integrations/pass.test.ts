@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { runPass, sweep } from '../../integrations/claude-code/lib/pass.mjs';
+import { runPass, sweep, forgetSession } from '../../integrations/claude-code/lib/pass.mjs';
 import { loadSession, saveSession, takeLock, addUsage } from '../../integrations/claude-code/lib/state.mjs';
 import { SYSTEM_PROMPT } from '../../integrations/claude-code/lib/policy.mjs';
 import { SWEEP_IDLE_MS, SWEEP_MAX_AGE_MS } from '../../integrations/claude-code/lib/limits.mjs';
@@ -252,4 +252,33 @@ it('sweep runs final only for idle, unprocessed, recent sessions and never the c
   const { d } = deps();
   await sweep('current', d, async (id: string, mode: string) => { ran.push(`${id}:${mode}`); return 'done'; });
   expect(ran.sort()).toEqual(['idle2:final', 'idle:final']);
+});
+
+it('forgetSession asks the server to remove the session and clears offRecordPending', async () => {
+  session('s1', { private: true, offRecordPending: true });
+  const { d, calls } = deps({ applyResult: { removed: 2, kept: 0, pending: 1 } });
+  expect(await forgetSession('s1', d)).toBe('done');
+  expect(calls.map((c) => c.url)).toEqual(['https://sp.test/extractor/forget-session']);
+  expect(JSON.parse(calls[0]!.init.body)).toEqual({ session_ref: 'claude_code:s1' });
+  expect(loadSession(home, 's1').offRecordPending).toBe(false);
+  expect(logText()).toContain('removed 2, kept 0, pending 1');
+});
+
+it('forgetSession keeps offRecordPending when the lock is held or the server fails', async () => {
+  session('s1', { private: true, offRecordPending: true });
+  const release = takeLock(home, 's1', NOW)!;
+  const { d, calls } = deps({ applyStatus: 500 });
+  expect(await forgetSession('s1', d)).toBe('skipped');
+  expect(calls).toHaveLength(0);
+  release();
+  expect(await forgetSession('s1', d)).toBe('failed');
+  expect(loadSession(home, 's1').offRecordPending).toBe(true);
+});
+
+it('sweep retries off-record removals instead of running a pass', async () => {
+  session('s1', { private: true, offRecordPending: true, lastActivity: NOW - SWEEP_IDLE_MS - 1000 });
+  const ran: string[] = [];
+  const { d } = deps();
+  await sweep('current', d, async (id: string) => { ran.push(`pass:${id}`); return 'done'; }, async (id: string) => { ran.push(`forget:${id}`); return 'done'; });
+  expect(ran).toEqual(['forget:s1']);
 });

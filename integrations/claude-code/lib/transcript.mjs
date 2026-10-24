@@ -11,7 +11,7 @@ const PATH_KEYS = ['file_path', 'path', 'notebook_path'];
 /** @returns {string | null} text to keep, or null */
 function clean(/** @type {string} */ raw) {
   const t = raw.replace(REMINDER, '').trim();
-  if (!t || t.startsWith('<command-') || t.startsWith('<local-command') || t === '/private' || t === '/forget') return null;
+  if (!t || t.startsWith('<command-') || t.startsWith('<local-command') || t === '/off-record' || t === '/forget') return null;
   return t;
 }
 

@@ -101,7 +101,7 @@ Privacy is enforced in layers, and the strongest ones don't depend on a model un
 
 1. **Opt-in folders.** Capture only runs in the folders you chose at setup (and their subfolders).
 2. **Deterministic controls**, checked by the hook *before* any processing:
-   - `/private`: this session is never processed;
+   - `/off-record`: this session is no longer processed, and what was already captured from it is removed;
    - `/forget`: everything not yet captured is dropped.
 3. **Local processing.** The transcript is read on your machine: only your messages and the agent's replies (no tool calls or tool results), with a size cap. Only the extracted entries are sent.
 4. **Extractor filter.** Personal matters and routine work steps are excluded by its rules, and doubtful items become questions, not entries.

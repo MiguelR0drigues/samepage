@@ -17,7 +17,7 @@ const INSTRUCTIONS = `Shared team memory: decisions, personal views, principles 
 - When told to record something ("record this", "we decided X with Y"), use record; use list_team to get the author ids.
 - Never record personal matters or anything not about the company.
 - Exploration = an idea discussed without a conclusion; do not record it as a decision.
-- SamePage also captures automatically from these conversations (source: claude_code). If the user says such an entry was personal or not worth recording, delete it with delete_entry and that reason. The user can type /private to skip the whole conversation, or /forget to drop what was said since the last capture.
+- SamePage also captures automatically from these conversations (source: claude_code). If the user says such an entry was personal or not worth recording, delete it with delete_entry and that reason. The user can type /off-record to stop capturing the conversation and remove what was already captured from it, or /forget to drop what was said since the last capture.
 - If the summary lists "Pending for you", ask those questions briefly at a natural moment (not in the middle of a task) and pass each answer to answer_pending.`;
 
 const limit = z.number().int().min(1).max(20).default(5).describe('Max results (1-20)');

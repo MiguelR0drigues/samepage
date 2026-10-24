@@ -30,9 +30,13 @@ export function handleHook(event, input, { home, env, now }) {
 
   if (event === 'prompt') {
     const prompt = typeof input.prompt === 'string' ? input.prompt.trim() : '';
-    if (prompt === '/private') {
+    if (prompt === '/off-record') {
       patch.private = true;
-      result = { stdout: block('SamePage: OK, this conversation will not be captured. Nothing was sent to Claude.') };
+      patch.offRecordPending = true;
+      result = {
+        stdout: block('SamePage: OK, this conversation is off the record: nothing more is captured and what was already captured from it is being removed. Nothing was sent to Claude.'),
+        spawn: [EXTRACT, '--off-record', id],
+      };
     } else if (prompt === '/forget') {
       try { patch.skipUntilLine = transcriptPath ? readTranscript(transcriptPath, 0).endLine : 0; } catch { patch.skipUntilLine = 0; }
       result = { stdout: block('SamePage: OK, everything so far that was not captured yet will be skipped. Nothing was sent to Claude.') };

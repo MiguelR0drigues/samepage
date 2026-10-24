@@ -1,7 +1,7 @@
 import type { Change, Correction, Entry, EntryStatus, EntryType, NewEntry, Pending, PendingAnswer, Person, Snapshot, SnapshotV2 } from '../domain/types';
 
 export interface EntryFilter { type?: EntryType; status?: EntryStatus; area?: string; limit?: number;
-  workstreamId?: string; supersedesId?: string; targetId?: string; ids?: string[] }
+  workstreamId?: string; supersedesId?: string; targetId?: string; ids?: string[]; sourceRef?: string }
 export type EntryPatch = Partial<Pick<Entry, 'type' | 'status' | 'title' | 'content' | 'question' | 'positions'
   | 'consensus' | 'consensusReason' | 'supersedesId' | 'authors' | 'resolutionNote' | 'deletedAt' | 'deletedBy'>>;
 
