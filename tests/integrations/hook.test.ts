@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { handleHook } from '../../integrations/claude-code/lib/handle-hook.mjs';
+import { handleHook, LOGIN_NOTE } from '../../integrations/claude-code/lib/handle-hook.mjs';
 import { loadSession, saveSession, listSessions } from '../../integrations/claude-code/lib/state.mjs';
 
 // lets a test write the session file while handleHook is reading the transcript
@@ -22,7 +22,7 @@ let cwd: string;
 beforeEach(() => {
   home = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-hook-'));
   cwd = path.join(home, 'company', 'web-app');
-  fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify({ url: 'http://x', token: 't', folders: [path.join(home, 'company')] }));
+  fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify({ url: 'http://x', token: 't', claudeToken: 'x', folders: [path.join(home, 'company')] }));
 });
 afterEach(() => { race.onRead = null; fs.rmSync(home, { recursive: true, force: true }); });
 
@@ -82,6 +82,27 @@ it('a notice is injected once as additionalContext', () => {
   expect(JSON.parse(r.stdout!)).toEqual({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: 'SamePage: 2 proposals pending' } });
   expect(loadSession(home, 's1').notice).toBeNull();
   expect(run('prompt', { prompt: 'hello' })).toEqual({});
+});
+
+const withoutClaudeToken = () => fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify({ url: 'http://x', token: 't', folders: [path.join(home, 'company')] }));
+const noteOf = (r: { stdout?: string }) => JSON.parse(r.stdout!).hookSpecificOutput.additionalContext;
+
+it('without a Claude token the first prompt of a session says capture is off, the second does not', () => {
+  withoutClaudeToken();
+  expect(noteOf(run('prompt', { prompt: 'hello' }))).toBe(LOGIN_NOTE('http://x'));
+  expect(loadSession(home, 's1').loginNoticed).toBe(true);
+  expect(run('prompt', { prompt: 'hello' })).toEqual({});
+});
+
+it('with a Claude token there is no login note', () => {
+  expect(run('prompt', { prompt: 'hello' })).toEqual({});
+});
+
+it('a pending notice wins over the login note', () => {
+  withoutClaudeToken();
+  saveSession(home, 's1', { ...loadSession(home, 's1'), notice: 'SamePage: 2 proposals pending' });
+  expect(noteOf(run('prompt', { prompt: 'hello' }))).toBe('SamePage: 2 proposals pending');
+  expect(noteOf(run('prompt', { prompt: 'hello' }))).toBe(LOGIN_NOTE('http://x'));
 });
 
 it('stop spawns a mid pass only at 15 new user messages', () => {

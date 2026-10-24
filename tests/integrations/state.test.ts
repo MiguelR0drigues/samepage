@@ -13,7 +13,7 @@ afterEach(() => { fs.rmSync(home, { recursive: true, force: true }); });
 it('loadSession defaults for an unknown id, saveSession round-trips', () => {
   expect(st.loadSession(home, 'x')).toEqual({
     transcriptPath: null, cwd: null, lastActivity: 0, processedLine: 0, processedAt: 0,
-    skipUntilLine: 0, private: false, notes: [], notice: null,
+    skipUntilLine: 0, private: false, notes: [], notice: null, loginNoticed: false,
   });
   const s = { ...st.loadSession(home, 'x'), processedLine: 7, notes: ['a'], private: true };
   st.saveSession(home, 'x', s);

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { parseArgs, parseFolders, findClaude, findNode, joinTeam, readJsonObject } from '../../integrations/claude-code/setup.mjs';
+import { parseArgs, parseFolders, findClaude, findNode, joinTeam, readJsonObject, loginWindowCommand, defaultFolders } from '../../integrations/claude-code/setup.mjs';
 
 let dir: string;
 beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-setup-')); });
@@ -78,4 +78,26 @@ it('joinTeam reports a taken name, the server error on 400/403 and an unreachabl
   await expect(joinTeam('http://x', 'bad', 'ana', false, reply(403, { error: 'invalid join code' }))).rejects.toThrow(/^invalid join code$/);
   await expect(joinTeam('http://x', 'dev', '!!', false, reply(400, { error: 'name needs letters or digits' }))).rejects.toThrow(/^name needs letters or digits$/);
   await expect(joinTeam('http://x', 'dev', 'a', false, (async () => { throw new Error('boom'); }) as typeof fetch)).rejects.toThrow(/^Could not reach http:\/\/x\.$/);
+});
+
+it('joinTeam names the requested name when a 409 has no name, and fails on a success without a token', async () => {
+  expect(await joinTeam('http://x', 'dev', 'ana', false, reply(409, {}))).toEqual({ taken: 'ana' });
+  await expect(joinTeam('http://x', 'dev', 'ana', false, reply(201, { name: 'Ana' }))).rejects.toThrow(/^The server did not return a token\.$/);
+});
+
+it('loginWindowCommand opens a terminal per platform, null elsewhere', () => {
+  const node = String.raw`C:\Program Files\node.exe`, login = String.raw`C:\h\login.mjs`;
+  const win = loginWindowCommand('win32', node, login)!;
+  expect(win.cmd).toBe('cmd.exe');
+  expect(win.args).toEqual(['/c', 'start', '"SamePage login"', `"${node}"`, `"${login}"`]);
+  const mac = loginWindowCommand('darwin', '/usr/bin/node', "/Users/o'neil/.samepage/login.mjs")!;
+  expect(mac.cmd).toBe('osascript');
+  expect(mac.args).toEqual(['-e', String.raw`tell application "Terminal" to do script "'/usr/bin/node' '/Users/o'\\''neil/.samepage/login.mjs'"`]);
+  expect(loginWindowCommand('linux', '/usr/bin/node', '/h/login.mjs')).toEqual({ cmd: 'x-terminal-emulator', args: ['-e', '/usr/bin/node', '/h/login.mjs'] });
+  expect(loginWindowCommand('freebsd', 'n', 'l')).toBeNull();
+});
+
+it('defaultFolders offers the stored folders, else the current folder', () => {
+  expect(defaultFolders(['/a', '/b'], '/cwd')).toBe('/a; /b');
+  expect(defaultFolders([], '/cwd')).toBe('/cwd');
 });
