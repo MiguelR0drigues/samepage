@@ -15,6 +15,13 @@
       "when": 1792800873432,
       "tag": "0001_gray_ultimates",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792810202808,
+      "tag": "0002_moaning_the_fallen",
+      "breakpoints": true
     }
   ]
 }

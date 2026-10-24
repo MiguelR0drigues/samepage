@@ -4,7 +4,7 @@ export type EntryStatus = 'active' | 'superseded' | 'under_review' | 'open' | 'a
 export type Consensus = 'unanimous' | 'majority' | 'no_consensus';
 export type SourceKind = 'meet' | 'claude_code' | 'explicit';
 export interface Position { person: string; position: string; arguments?: string }
-export interface Person { id: string; name: string; isSystem: boolean; lastSeenAt: Date | null }
+export interface Person { id: string; name: string; isSystem: boolean; lastSeenAt: Date | null; dashboardSeenAt: Date | null }
 export interface Entry {
   id: string; type: EntryType; status: EntryStatus; title: string; content: string;
   question: string | null; positions: Position[] | null; consensus: Consensus | null;
@@ -16,4 +16,4 @@ export interface Entry {
 }
 export type NewEntry = Omit<Entry, 'id' | 'createdAt' | 'updatedAt' | 'updatedBy' | 'deletedAt' | 'deletedBy'>;
 export interface Change { kind: 'new' | 'changed' | 'removed'; entry: Entry }
-export interface Snapshot { version: 1; people: (Person & { tokenHash: string })[]; entries: Entry[] }
+export interface Snapshot { version: 1; people: (Person & { tokenHash: string; dashboardNonce?: string | null })[]; entries: Entry[] }

@@ -9,7 +9,7 @@ type EntryRow = typeof entries.$inferSelect;
 type PersonRow = typeof people.$inferSelect;
 
 const DEFAULT_LIMIT = 20;
-const toPerson = ({ tokenHash: _t, ...p }: PersonRow): Person => p;
+const toPerson = ({ tokenHash: _t, dashboardNonce: _n, ...p }: PersonRow): Person => p;
 
 export class PostgresStore implements Store {
   constructor(private db: PgDatabase<any, typeof schema>) {}
@@ -49,6 +49,26 @@ export class PostgresStore implements Store {
     await this.db.update(people).set({ lastSeenAt: at }).where(eq(people.id, personId));
   }
 
+  async touchDashboardSeen(personId: string, at: Date) {
+    await this.db.update(people).set({ dashboardSeenAt: at }).where(eq(people.id, personId));
+  }
+
+  async setDashboardNonce(personId: string, dashboardNonce: string) {
+    await this.db.update(people).set({ dashboardNonce }).where(eq(people.id, personId));
+  }
+
+  async consumeDashboardNonce(personId: string, nonce: string) {
+    const rows = await this.db.update(people).set({ dashboardNonce: null })
+      .where(and(eq(people.id, personId), eq(people.dashboardNonce, nonce))).returning({ id: people.id });
+    return rows.length > 0;
+  }
+
+  async moveUpdates(fromWorkstreamId: string, toWorkstreamId: string) {
+    const rows = await this.db.update(entries).set({ workstreamId: toWorkstreamId })
+      .where(eq(entries.workstreamId, fromWorkstreamId)).returning({ id: entries.id });
+    return rows.length;
+  }
+
   async setTokenHash(personId: string, tokenHash: string) {
     const [row] = await this.db.update(people).set({ tokenHash }).where(eq(people.id, personId)).returning();
     return row ? toPerson(row) : null;
@@ -60,16 +80,34 @@ export class PostgresStore implements Store {
     return row ? (await this.withAuthors([row]))[0]! : null;
   }
 
+  private filter(f: EntryFilter) {
+    return and(
+      isNull(entries.deletedAt),
+      f.type ? eq(entries.type, f.type) : undefined,
+      f.status ? eq(entries.status, f.status) : undefined,
+      f.area ? eq(entries.area, f.area) : undefined,
+      f.workstreamId ? eq(entries.workstreamId, f.workstreamId) : undefined,
+      f.supersedesId ? eq(entries.supersedesId, f.supersedesId) : undefined,
+      f.targetId ? eq(entries.targetId, f.targetId) : undefined,
+      f.ids ? inArray(entries.id, f.ids) : undefined,
+    );
+  }
+
   async listEntries(f: EntryFilter) {
-    const rows = await this.db.select().from(entries)
-      .where(and(
-        isNull(entries.deletedAt),
-        f.type ? eq(entries.type, f.type) : undefined,
-        f.status ? eq(entries.status, f.status) : undefined,
-        f.area ? eq(entries.area, f.area) : undefined,
-      ))
+    const rows = await this.db.select().from(entries).where(this.filter(f))
       .orderBy(desc(entries.createdAt)).limit(f.limit ?? DEFAULT_LIMIT);
     return this.withAuthors(rows);
+  }
+
+  async countEntries(f: EntryFilter) {
+    const [row] = await this.db.select({ n: count() }).from(entries).where(this.filter(f));
+    return row!.n;
+  }
+
+  async listAreas() {
+    const rows = await this.db.selectDistinct({ area: entries.area }).from(entries)
+      .where(isNull(entries.deletedAt)).orderBy(asc(entries.area));
+    return rows.map((r) => r.area);
   }
 
   async search(q: string, f: { area?: string; limit?: number }) {
