@@ -278,3 +278,115 @@ describe('proposals', () => {
     expect((await store.getEntry(p.id))!.status).toBe('open');
   });
 });
+
+const section = (body: string, tag: string, start: string) => body.split(tag).find((s) => s.startsWith(start))!;
+const ws = (title: string) => ({ type: 'workstream' as const, title, content: 'About it.', area: 'gtm' });
+
+describe('Who thinks what', () => {
+  it('shows views side by side per area, with the current decisions', async () => {
+    const m = new Memory(store);
+    const view = (title: string, area: string) => ({ type: 'view' as const, title, content: `${title} text`, area });
+    await m.record(miguel, view('Miguel on positioning', 'positioning'));
+    await m.record(joao, view('Joao on positioning', 'positioning'));
+    await m.record(miguel, view('Miguel on pricing', 'pricing'));
+    await m.record(miguel, { ...decision('Own the category'), area: 'positioning' });
+    const body = await (await get(app, '/dashboard/views', await signIn(app, store, 'miguel'))).text();
+    const positioning = section(body, '<h2>', 'positioning');
+    for (const s of ['Miguel', 'João', 'Miguel on positioning', 'Joao on positioning', 'Current decisions', 'Own the category']) {
+      expect(positioning).toContain(s);
+    }
+    expect(positioning).not.toContain('No view recorded yet.');
+    const pricing = section(body, '<h2>', 'pricing');
+    expect(pricing).toContain('Miguel on pricing');
+    expect(pricing).toContain('No view recorded yet.');
+    expect(pricing).not.toContain('Current decisions');
+  });
+
+  it('says so when there are no views', async () => {
+    expect(await (await get(app, '/dashboard/views', await signIn(app, store, 'miguel'))).text()).toContain('No views recorded yet.');
+  });
+});
+
+describe('Team', () => {
+  it('shows what each person works on, last activity and blockers', async () => {
+    const m = new Memory(store);
+    const w1 = await m.record(miguel, ws('Launch site'));
+    await m.record(miguel, { type: 'update', title: 'Hero done', content: 'c', area: 'gtm', workstreamId: w1.id });
+    const w2 = await m.record(joao, ws('Pricing page'));
+    await m.setWorkstreamStatus(joao, w2.id, 'blocked');
+    const w3 = await m.record(miguel, ws('Old thing'));
+    await m.setWorkstreamStatus(miguel, w3.id, 'done');
+    const body = await (await get(app, '/dashboard/team', await signIn(app, store, 'miguel'))).text();
+    const [mCard, jCard] = [section(body, '<h3>', 'Miguel'), section(body, '<h3>', 'João')];
+    expect(mCard).toMatch(/Working on:[\s\S]*Launch site/);
+    expect(mCard).toMatch(/Last activity:[\s\S]*Old thing/);
+    expect(mCard).toMatch(/Done \(1\)[\s\S]*Old thing/);
+    expect(mCard).not.toContain('Blocked:');
+    expect(jCard).toMatch(/Blocked:[\s\S]*Pricing page/);
+    expect(jCard).not.toContain('Done (');
+  });
+
+  it('a person with nothing recorded gets the empty states', async () => {
+    const jCard = section(await (await get(app, '/dashboard/team', await signIn(app, store, 'miguel'))).text(), '<h3>', 'João');
+    expect(jCard).toContain('Nothing in progress.');
+    expect(jCard).toContain('No activity yet.');
+  });
+});
+
+describe('workstream page', () => {
+  it('shows the progress timeline, newest first, with author names', async () => {
+    const m = new Memory(store);
+    const w = await m.record(miguel, ws('Launch site'));
+    const up = (title: string) => ({ type: 'update' as const, title, content: `${title} text`, area: 'gtm', workstreamId: w.id });
+    await m.record(miguel, up('First step'));
+    await m.record(joao, up('Second step'));
+    const res = await get(app, `/dashboard/workstreams/${w.id}`, await signIn(app, store, 'miguel'));
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    expect(body).toContain('Launch site');
+    expect(body).toMatch(/Progress[\s\S]*Second step[\s\S]*João[\s\S]*First step[\s\S]*Miguel/);
+  });
+
+  it('renames, sets status and merges from the dashboard', async () => {
+    const m = new Memory(store);
+    const w1 = await m.record(miguel, ws('Launch site'));
+    const w2 = await m.record(miguel, ws('Landing copy'));
+    await m.record(miguel, { type: 'update', title: 'Copy drafted', content: 'c', area: 'gtm', workstreamId: w2.id });
+    const session = await signIn(app, store, 'joao');
+    const page = `/dashboard/workstreams/${w1.id}`;
+    const renamed = await post(app, `${page}/rename`, session, { title: 'Launch v2' });
+    expect(renamed.status).toBe(303);
+    expect(renamed.headers.get('location')).toBe(page);
+    expect((await store.getEntry(w1.id))!.title).toBe('Launch v2');
+    expect((await post(app, `${page}/rename`, session, { title: '  ' })).status).toBe(400);
+    expect((await post(app, `${page}/status`, session, { status: 'done' })).status).toBe(303);
+    expect((await store.getEntry(w1.id))!.status).toBe('done');
+    const bogus = await post(app, `${page}/status`, session, { status: 'bogus' });
+    expect(bogus.status).toBe(400);
+    expect((await store.getEntry(w1.id))!.status).toBe('done');
+    await post(app, `${page}/status`, session, { status: 'in_progress' });
+    expect(await (await get(app, page, session)).text()).toContain(`<option value="${w2.id}"`);
+    const merged = await post(app, `/dashboard/workstreams/${w2.id}/merge`, session, { into: w1.id });
+    expect(merged.status).toBe(303);
+    expect(merged.headers.get('location')).toBe(page);
+    expect(await (await get(app, page, session)).text()).toContain('Copy drafted');
+    const from = await store.getEntry(w2.id);
+    expect(from!.status).toBe('done');
+    expect(await (await get(app, `/dashboard/workstreams/${w2.id}`, session)).text()).toContain('Merged into');
+    const self = await post(app, `${page}/merge`, session, { into: w1.id });
+    expect(self.status).toBe(400);
+    expect(await self.text()).toContain('cannot be merged into itself');
+    expect((await post(app, `${page}/merge`, session, { into: 'abc' })).status).toBe(400);
+  });
+
+  it('bad workstream ids are 404', async () => {
+    const session = await signIn(app, store, 'miguel');
+    const d = await new Memory(store).record(miguel, decision('Not a workstream'));
+    const gone = await new Memory(store).record(miguel, ws('Gone'));
+    await new Memory(store).remove(miguel, gone.id);
+    for (const id of ['abc', 'a'.repeat(36), crypto.randomUUID(), d.id, gone.id]) {
+      expect((await get(app, `/dashboard/workstreams/${id}`, session)).status).toBe(404);
+    }
+    for (const action of ['rename', 'status', 'merge']) expect((await post(app, `/dashboard/workstreams/abc/${action}`, session, {})).status).toBe(404);
+  });
+});

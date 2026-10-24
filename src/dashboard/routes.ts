@@ -7,12 +7,13 @@ import { Memory, MemoryError } from '../service/memory';
 import type { Store } from '../storage/store';
 import { readSession, redeemLink, SESSION_TTL_S, sessionToken } from './auth';
 import { message } from './html';
-import { entryPage, homePage, proposalsPage } from './pages';
+import { entryPage, homePage, proposalsPage, teamPage, viewsPage, workstreamPage } from './pages';
 
 export type DashVars = { store: Store; memory: Memory; person: Person; people: Person[] };
 
 export const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const HISTORY_MAX = 10;
+const STATUSES = ['in_progress', 'blocked', 'done'] as const;
 const VISIT_TTL_S = 1800;
 const FIRST_VISIT_MS = 7 * 86_400_000;
 const EXPIRED = 'This sign-in link has expired or was already used. Ask your agent to open the dashboard again.';
@@ -123,6 +124,61 @@ export function dashboardRoutes(getStore: (env: Env) => Store) {
       throw e;
     }
     return c.redirect('/dashboard/proposals', 303);
+  });
+
+  app.get('/views', async (c) => {
+    const store = c.get('store');
+    // shortcut: last 100 only, fine for a small team; paginate if it grows
+    const views = await store.listEntries({ type: 'view', limit: 100 });
+    const decisions = await store.listEntries({ type: 'decision', limit: 100 });
+    return c.html(await viewsPage({ person: c.get('person'), people: c.get('people'), views, decisions }));
+  });
+
+  app.get('/team', async (c) => {
+    const store = c.get('store');
+    // shortcut: last 100 only, fine for a small team; paginate if it grows
+    const workstreams = await store.listEntries({ type: 'workstream', limit: 100 });
+    const updates = await store.listEntries({ type: 'update', limit: 100 });
+    const recent = await store.listEntries({ limit: 100 });
+    return c.html(await teamPage({ person: c.get('person'), people: c.get('people'), workstreams, updates, recent }));
+  });
+
+  app.get('/workstreams/:id', async (c) => {
+    const store = c.get('store');
+    const id = c.req.param('id');
+    const workstream = ID.test(id) ? await store.getEntry(id) : null;
+    if (workstream?.type !== 'workstream' || workstream.deletedAt) return message(404, 'Workstream not found.');
+    // shortcut: last 100 only, fine for a small team; paginate if it grows
+    const updates = await store.listEntries({ type: 'update', workstreamId: id, limit: 100 });
+    const all = await store.listEntries({ type: 'workstream', limit: 100 });
+    const others = all.filter((w) => w.id !== id && w.status !== 'done');
+    return c.html(await workstreamPage({ person: c.get('person'), people: c.get('people'), workstream, updates, others }));
+  });
+
+  app.post('/workstreams/:id/:action{rename|status|merge}', async (c) => {
+    const id = c.req.param('id');
+    if (!ID.test(id)) return message(404, 'Not found.');
+    const [memory, person, action] = [c.get('memory'), c.get('person'), c.req.param('action')];
+    const form = await c.req.parseBody();
+    const field = (k: string) => (typeof form[k] === 'string' ? form[k] : '');
+    const back = { href: `/dashboard/workstreams/${id}`, label: 'Back to workstream' };
+    let to = id;
+    try {
+      if (action === 'rename') await memory.renameWorkstream(person, id, field('title'));
+      else if (action === 'status') {
+        const status = STATUSES.find((s) => s === field('status'));
+        if (!status) return message(400, 'Unknown status.', back);
+        await memory.setWorkstreamStatus(person, id, status);
+      } else {
+        to = field('into');
+        if (!ID.test(to)) return message(400, 'Pick a workstream to merge into.', back);
+        await memory.mergeWorkstream(person, id, to);
+      }
+    } catch (e) {
+      if (e instanceof MemoryError) return message(400, e.message, back);
+      throw e;
+    }
+    return c.redirect(`/dashboard/workstreams/${to}`, 303);
   });
 
   // Keep last: unknown dashboard paths answer here instead of falling through to the bearer middleware.

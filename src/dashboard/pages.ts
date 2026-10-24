@@ -4,7 +4,9 @@ import { day, entryHref, layout, nameOf, pill } from './html';
 
 const SHOWN = 50;
 const KIND_TONE = { new: 'ok', changed: 'acc', removed: 'mut' } as const;
-const STATUS_TONE: Partial<Record<EntryStatus, 'ok' | 'warn' | 'mut'>> = { active: 'ok', under_review: 'warn', open: 'warn', superseded: 'mut' };
+const STATUS_TONE: Partial<Record<EntryStatus, 'ok' | 'acc' | 'warn' | 'mut'>> = {
+  active: 'ok', under_review: 'warn', open: 'warn', superseded: 'mut', in_progress: 'acc', blocked: 'warn', done: 'ok',
+};
 
 const changeRow = (people: Person[], { kind, entry: e }: Change) => {
   const by = nameOf(people, (kind === 'new' ? e.recordedBy : kind === 'changed' ? e.updatedBy : e.deletedBy) ?? e.recordedBy);
@@ -77,4 +79,65 @@ export const entryPage = (d: { person: Person; people: Person[]; entry: Entry; t
     : e.type === 'proposal' ? proposalCard(d.person, d.people, e, d.target)
     : otherBody(d.people, e);
   return layout({ title: e.title, active: e.type === 'proposal' ? 'proposals' : null, person: d.person, body });
+};
+
+export const viewsPage = (d: { person: Person; people: Person[]; views: Entry[]; decisions: Entry[] }) => {
+  const humans = d.people.filter((p) => !p.isSystem);
+  const live = d.decisions.filter((e) => e.status === 'active' || e.status === 'under_review');
+  const areas = [...new Set(d.views.map((v) => v.area))].sort();
+  return layout({ title: 'Who thinks what', active: 'views', person: d.person, body: html`
+${areas.length ? areas.map((area) => {
+    const current = live.filter((e) => e.area === area);
+    return html`<h2>${area}</h2>
+<div class="cols">${humans.map((p) => {
+      const mine = d.views.filter((v) => v.area === area && v.authors.includes(p.id));
+      return html`<div class="row"><b>${p.name}</b>${mine.length ? mine.map((v) => html`
+<div class="t"><a href="${entryHref(v)}">${v.title}</a> <span class="mut">· ${day(v.createdAt)}</span></div><div class="pre">${v.content}</div>`)
+        : html`<p class="mut">No view recorded yet.</p>`}</div>`;
+    })}</div>
+${current.length ? html`<div class="t">Current decisions</div>${current.map((e) => html`<div><a href="${entryHref(e)}">${e.title}</a></div>`)}` : ''}`;
+  }) : html`<p class="mut">No views recorded yet.</p>`}` });
+};
+
+const wsLink = (w: Entry) => html`<a href="${entryHref(w)}">${w.title}</a>`;
+const wsRow = (w: Entry) => html`<div class="row">${wsLink(w)} ${statusPill(w)} <span class="mut">· ${day(w.updatedAt)}</span></div>`;
+
+export const teamPage = (d: { person: Person; people: Person[]; workstreams: Entry[]; updates: Entry[]; recent: Entry[] }) => {
+  const byId = new Map(d.workstreams.map((w) => [w.id, w]));
+  return layout({ title: 'Team', active: 'team', person: d.person, body: html`${d.people.filter((p) => !p.isSystem).map((p) => {
+    const own = (e: Entry) => e.recordedBy === p.id || e.authors.includes(p.id);
+    const mine = d.workstreams.filter(own);
+    const open = mine.filter((w) => w.status !== 'done');
+    const done = mine.filter((w) => w.status === 'done');
+    const blocked = mine.filter((w) => w.status === 'blocked');
+    const current = d.updates.filter(own).map((u) => byId.get(u.workstreamId ?? '')).find((w) => w && w.status !== 'done') ?? open[0];
+    const last = d.recent.find(own);
+    return html`<div class="row"><h3>${p.name}</h3>
+<div><b>Working on:</b> ${current ? wsLink(current) : html`<span class="mut">Nothing in progress.</span>`}</div>
+<div><b>Last activity:</b> ${last ? html`<a href="${entryHref(last)}">${last.title}</a> <span class="mut">· ${day(last.createdAt)}</span>`
+  : html`<span class="mut">No activity yet.</span>`}</div>
+${blocked.length ? html`<div><b>Blocked:</b> ${blocked.map((w) => html`${wsLink(w)} `)}</div>` : ''}
+${open.length || done.length ? html`<div class="t">Workstreams</div>${open.map(wsRow)}
+${done.length ? html`<details><summary>Done (${done.length})</summary>${done.map(wsRow)}</details>` : ''}` : ''}</div>`;
+  })}` });
+};
+
+export const workstreamPage = (d: { person: Person; people: Person[]; workstream: Entry; updates: Entry[]; others: Entry[] }) => {
+  const w = d.workstream;
+  const act = `/dashboard/workstreams/${w.id}`;
+  return layout({ title: w.title, active: 'team', person: d.person, body: html`
+<h2>${w.title}</h2>
+<p>${statusPill(w)}</p>
+<div class="pre">${w.content}</div>
+${w.resolutionNote && html`<p class="mut">${w.resolutionNote}</p>`}
+<div class="t">Progress</div>
+<div class="tl">${d.updates.length ? d.updates.map((u) => html`<div><span class="mut">${day(u.createdAt)}</span> · <a href="${entryHref(u)}">${u.title}</a>
+<span class="mut">· by ${names(d.people, u.authors)}</span><div class="pre">${u.content}</div></div>`) : html`<span class="mut">No updates yet.</span>`}</div>
+<div class="t">Manage</div>
+<form class="inl" method="post" action="${act}/rename"><input name="title" value="${w.title}" required><button>Rename</button></form>
+<form class="inl" method="post" action="${act}/status"><select name="status">
+${(['in_progress', 'blocked', 'done'] as const).map((s) => html`<option value="${s}" ${s === w.status ? 'selected' : ''}>${s}</option>`)}
+</select><button>Set status</button></form>
+${d.others.length ? html`<form class="inl" method="post" action="${act}/merge" onsubmit="return confirm('Move all updates and close this workstream?')">
+<select name="into">${d.others.map((o) => html`<option value="${o.id}">${o.title}</option>`)}</select><button>Merge into</button></form>` : ''}` });
 };

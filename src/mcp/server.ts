@@ -93,6 +93,22 @@ export function buildMcpServer(store: Store, actor: Person, summary: string | un
     return `Workstream ${a.id} is ${a.status}`;
   }));
 
+  server.registerTool('rename_workstream', {
+    description: 'Rename a workstream. Any team member can.',
+    inputSchema: z.object({ id, title: z.string() }),
+  }, (a) => run(async () => {
+    await memory.renameWorkstream(actor, a.id, a.title);
+    return `Renamed workstream ${a.id}`;
+  }));
+
+  server.registerTool('merge_workstreams', {
+    description: 'Merge one workstream into another: moves all its updates and marks it done. Any team member can.',
+    inputSchema: z.object({ from_id: id, into_id: id }),
+  }, (a) => run(async () => {
+    await memory.mergeWorkstream(actor, a.from_id, a.into_id);
+    return `Merged ${a.from_id} into ${a.into_id}`;
+  }));
+
   server.registerTool('correct_text', {
     description: 'Fix the text of an entry you authored. A decision verdict (content) cannot be edited.',
     inputSchema: z.object({

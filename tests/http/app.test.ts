@@ -81,11 +81,12 @@ describe('MCP transport', () => {
 });
 
 describe('MCP tools', () => {
-  it('lists the 13 tools', async () => {
+  it('lists the 15 tools', async () => {
     const { tools } = await (await connect('t-miguel')).listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       'accept_proposal', 'correct_text', 'delete_entry', 'list_decisions', 'list_team', 'list_workstreams',
-      'open_dashboard', 'propose_revision', 'record', 'reject_proposal', 'search_context', 'set_workstream_status', 'supersede_decision',
+      'merge_workstreams', 'open_dashboard', 'propose_revision', 'record', 'reject_proposal', 'rename_workstream', 'search_context',
+      'set_workstream_status', 'supersede_decision',
     ]);
   });
 
@@ -135,6 +136,21 @@ describe('MCP tools', () => {
     expect(listed).not.toContain('Hero done');
     expect(text(await client.callTool({ name: 'list_workstreams', arguments: { status: 'done' } }))).toBe('No results.');
     expect((await store.listEntries({ type: 'update' }))[0]!.workstreamId).toBe(id);
+  });
+
+  it('rename_workstream and merge_workstreams work through MCP', async () => {
+    const client = await connect('t-miguel');
+    const ws = { type: 'workstream', title: 'Launch site', content: 'Ship it.', area: 'marketing' };
+    const mk = async (title: string) => text(await client.callTool({ name: 'record', arguments: { ...ws, title } })).replace('Recorded ', '');
+    const [a, b] = [await mk('A'), await mk('B')];
+    await client.callTool({ name: 'record', arguments: { ...ws, type: 'update', title: 'Hero done', workstream_id: a } });
+    expect(text(await client.callTool({ name: 'rename_workstream', arguments: { id: a, title: 'Launch v2' } }))).toBe(`Renamed workstream ${a}`);
+    expect((await store.getEntry(a))!.title).toBe('Launch v2');
+    expect(text(await client.callTool({ name: 'merge_workstreams', arguments: { from_id: a, into_id: b } }))).toBe(`Merged ${a} into ${b}`);
+    expect((await store.listEntries({ type: 'update' }))[0]!.workstreamId).toBe(b);
+    const self = await client.callTool({ name: 'merge_workstreams', arguments: { from_id: b, into_id: b } });
+    expect(self.isError).toBe(true);
+    expect(text(self)).toContain('cannot be merged into itself');
   });
 
   it('supersede_decision reports the outcome', async () => {
