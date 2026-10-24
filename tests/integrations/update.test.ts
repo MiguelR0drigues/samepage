@@ -172,6 +172,7 @@ it('build writes client.json whose version matches the tarball and is stable for
   expect(JSON.parse(tar.stdout).version).toBe(first.version);
   expect(first.version).toMatch(/^\d+\.\d+\.\d+-[0-9a-f]{8}$/);
   expect(JSON.parse(first.files['package.json']).version).toBe(first.version);
+  expect(fs.readFileSync(path.join(ROOT, 'public', 'client-version.txt'), 'utf8')).toBe(first.version);
   expect(Object.keys(first.files)).toEqual(expect.arrayContaining(['hook.mjs', 'update.mjs', 'lib/settings.mjs']));
   expect(build().version).toBe(first.version);
 }, 120_000);

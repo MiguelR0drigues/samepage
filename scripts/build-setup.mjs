@@ -34,6 +34,7 @@ try {
   fs.mkdirSync('public', { recursive: true });
   fs.copyFileSync(path.join(stage, name), 'public/samepage-setup.tgz');
   fs.writeFileSync('public/client.json', JSON.stringify({ version, files }));
+  fs.writeFileSync('public/client-version.txt', version); // lets an installer from npx's cache see that it is stale
   console.log(`public/samepage-setup.tgz, public/client.json (${version})`);
 } finally {
   fs.rmSync(stage, { recursive: true, force: true });

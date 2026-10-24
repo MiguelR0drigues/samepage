@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { parseArgs, parseFolders, findClaude, findNode, joinTeam, readJsonObject, loginWindowCommand, defaultFolders, loginWindowEnv } from '../../integrations/claude-code/setup.mjs';
+import { parseArgs, parseFolders, findClaude, findNode, joinTeam, readJsonObject, loginWindowCommand, defaultFolders, loginWindowEnv, newerInstaller } from '../../integrations/claude-code/setup.mjs';
 
 let dir: string;
 beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-setup-')); });
@@ -105,4 +105,13 @@ it('loginWindowEnv drops CLAUDE* and ANTHROPIC_* but keeps CLAUDE_CONFIG_DIR, SA
 it('defaultFolders offers the stored folders, else the current folder', () => {
   expect(defaultFolders(['/a', '/b'], '/cwd')).toBe('/a; /b');
   expect(defaultFolders([], '/cwd')).toBe('/cwd');
+});
+
+it('newerInstaller returns the server version only when it differs and looks like a version', async () => {
+  const served = (status: number, body: string) => (async () => new Response(body, { status })) as unknown as typeof fetch;
+  expect(await newerInstaller('http://x', '0.3.0-aaaa', served(200, '0.3.0-bbbb\n'))).toBe('0.3.0-bbbb');
+  expect(await newerInstaller('http://x', '0.3.0-aaaa', served(200, '0.3.0-aaaa'))).toBeNull();
+  expect(await newerInstaller('http://x', '0.3.0-aaaa', served(404, '0.3.0-bbbb'))).toBeNull();
+  expect(await newerInstaller('http://x', '0.3.0-aaaa', served(200, '1.0 & calc'))).toBeNull();
+  expect(await newerInstaller('http://x', '0.3.0-aaaa', (async () => { throw new Error('offline'); }) as unknown as typeof fetch)).toBeNull();
 });
