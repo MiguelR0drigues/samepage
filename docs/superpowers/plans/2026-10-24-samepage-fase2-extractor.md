@@ -23,7 +23,8 @@
 - **Auth.**
   - Hooks inherit the desktop app's environment (`CLAUDE_CODE_SDK_HAS_HOST_AUTH_REFRESH=1`, `CLAUDE_CODE_ENTRYPOINT=claude-desktop`, …). A `claude -p` child started with that environment fails: "OAuth session expired and could not be refreshed".
   - The child must run with `CLAUDE*`/`ANTHROPIC_*` variables stripped, using the CLI's own stored login. Stripping `ANTHROPIC_API_KEY` also keeps it on the subscription.
-  - On this machine `claude auth status` reports `loggedIn: false`, so the installer must run `claude auth login` when needed.
+  - On this machine `claude auth status` reports `loggedIn: false`; the CLI's `~/.claude/.credentials.json` holds a stub the desktop app writes (no refresh token), and a `claude auth login` by the user did not stick.
+  - **Decision (user):** use `claude setup-token`. It is a long-lived token for the person's subscription, made for headless use. The installer has the person run it, stores the token in `~/.samepage/config.json` as `claudeToken` (never printed) and passes it only to the extractor's `claude -p` child as `CLAUDE_CODE_OAUTH_TOKEN`. This is independent of the desktop app's login.
 - `UserPromptSubmit` receives an unknown `/private` as `prompt: "/private"` in `-p` mode. `{"decision":"block","reason":…}` stops it before any model call. Still to confirm in the desktop app: Task 8 checks it, with a fallback.
 - Exec-form hooks work with spaces in paths: `{"type":"command","command":"<node>","args":["C:\\Users\\Miguel Rodrigues\\…\\hook.mjs","stop"]}`.
 - The hook env has `CLAUDE_CODE_EXECPATH`, the absolute path of the running Claude binary. The extractor prefers it, so it works for desktop-only users.
@@ -296,7 +297,7 @@ export class Capture {
   - Comparison is case-insensitive on `win32` and `darwin`.
   - True when the path equals a folder or starts with `folder + sep`.
 - `state.mjs` (all paths under `home`):
-  - `readConfig(home): Config | null`, with `Config = { url, token, folders: string[], dailyLimit: number, claudePath: string | null }`;
+  - `readConfig(home): Config | null`, with `Config = { url, token, folders: string[], dailyLimit: number, claudePath: string | null, claudeToken: string | null }`;
   - `loadSession(home, id): SessionState`, with `SessionState = { transcriptPath: string|null, cwd: string|null, lastActivity: number, processedLine: number, processedAt: number, skipUntilLine: number, private: boolean, notes: string[], notice: string|null }`; defaults to zeros, null, false and `[]`;
   - `saveSession(home, id, s)`, which writes to `sessions/<id>.json` atomically (write a temp file, then rename);
   - `listSessions(home): string[]`;
@@ -350,7 +351,7 @@ export class Capture {
 
 **Interfaces:**
 - `claude.mjs`:
-  - `sanitizeEnv(env): Record<string,string>`: removes keys matching `/^(CLAUDE|ANTHROPIC_)/` except `CLAUDE_CONFIG_DIR`, then adds `SAMEPAGE_EXTRACTOR=1`.
+  - `sanitizeEnv(env): Record<string,string>`: removes keys matching `/^(CLAUDE|ANTHROPIC_)/` except `CLAUDE_CONFIG_DIR`, then adds `SAMEPAGE_EXTRACTOR=1`, and `CLAUDE_CODE_OAUTH_TOKEN=<config.claudeToken>` when the token is set: `sanitizeEnv(env, claudeToken?)`.
   - `claudeCommand(env, config): string[]`: `[env.CLAUDE_CODE_EXECPATH]` when it exists and its basename starts with `claude`; else `[config.claudePath ?? 'claude']`.
   - `runClaude({ command, prompt, systemPromptFile, schema, cwd, env, timeoutMs = CLAUDE_TIMEOUT_MS }): Promise<unknown>`:
     - spawns `command[0]` with `[...command.slice(1), ...the exact flags in Global Constraints]`, `windowsHide`, and `shell` only when the binary ends in `.cmd`;
@@ -418,15 +419,15 @@ update (only when the prompt says a session update is needed, otherwise null): w
   - all errors are caught and logged.
 - `fake-claude.mjs` (test fixture): reads stdin and prints the contents of the file named by env `FAKE_CLAUDE_OUT`. With `FAKE_CLAUDE_EXIT=1` it exits 1. It appends its argv and env `SAMEPAGE_EXTRACTOR` to `FAKE_CLAUDE_LOG`.
 
-- [ ] **Step 1: Verify `claude -p` structured output (needs the user's `claude auth login`).** In the scratchpad, run:
+- [ ] **Step 1: Verify `claude -p` structured output (needs the token from the user's `claude setup-token`, read from a file without printing it).** In the scratchpad, run:
 
 ```
 echo "We decided with Joao to price per seat." | node -e "<spawn claude with sanitizeEnv and the exact flags; print stdout>"
 ```
 
-  Use a minimal schema `{"type":"object","properties":{"ok":{"type":"string"}},"required":["ok"]}`. Expected: JSON with `is_error: false` and the schema output in a named field (expected `structured_output`); record the field name in `claude.mjs`. Also run `claude auth status` with the sanitized env. Expected: `loggedIn: true`. If the login still fails with the sanitized env, stop and report.
+  Use a minimal schema `{"type":"object","properties":{"ok":{"type":"string"}},"required":["ok"]}`. Expected: JSON with `is_error: false` and the schema output in a named field (expected `structured_output`); record the field name in `claude.mjs`. If authentication fails with the sanitized env plus `CLAUDE_CODE_OAUTH_TOKEN`, stop and report.
 - [ ] **Step 2: Write the failing tests:**
-  - `sanitizeEnv strips CLAUDECODE, CLAUDE_CODE_*, ANTHROPIC_API_KEY, keeps PATH and CLAUDE_CONFIG_DIR, adds SAMEPAGE_EXTRACTOR`;
+  - `sanitizeEnv strips CLAUDECODE, CLAUDE_CODE_*, ANTHROPIC_API_KEY, keeps PATH and CLAUDE_CONFIG_DIR, adds SAMEPAGE_EXTRACTOR and CLAUDE_CODE_OAUTH_TOKEN when given`;
   - `runClaude passes the exact flags and returns the structured output` (fake-claude via `command: [process.execPath, fixture]`; the log shows `--settings {"disableAllHooks":true}`, `--model haiku`, and `SAMEPAGE_EXTRACTOR=1`);
   - `runClaude rejects on is_error, non-JSON and timeout` (a fixture mode that sleeps forever; `timeoutMs: 500`);
   - pass, with a fake `fetch` that records calls and a temp `home`:
@@ -505,10 +506,10 @@ echo "We decided with Joao to price per seat." | node -e "<spawn claude with san
   2. Find `claude` with `where` (win32) or `command -v`. If missing: `Install Claude Code first: https://code.claude.com/docs`.
   3. `GET <url>/summary` with the token must return 200. Otherwise: `This token was rejected by <url>.`
   4. Folders come from `--folders`, or an interactive question: `Which folders hold company work? Capture runs only there (separate several with ;) [<cwd>]:`. Each must exist; store them resolved.
-  5. Copy `hook.mjs`, `extract.mjs` and `lib/` to `<home>`. Write `<home>/config.json` `{ url, token, folders, dailyLimit: 20, claudePath }`, with mode `0o600` off Windows.
+  5. Copy `hook.mjs`, `extract.mjs` and `lib/` to `<home>`. Write `<home>/config.json` `{ url, token, folders, dailyLimit: 20, claudePath, claudeToken }`, with mode `0o600` off Windows.
   6. Read `<claudeDir>/settings.json` (missing → `{}`; invalid JSON → abort without writing). On the first install, back it up to `settings.json.samepage-backup`. Write `mergeHooks(settings, process.execPath, <home>/hook.mjs)`.
   7. Run `claude mcp remove samepage -s user` (failure ignored), then `claude mcp add --scope user --transport http samepage <url>/mcp --header "Authorization: Bearer <token>"`. Use `execFileSync` with an args array and no shell (a `.cmd` binary needs `shell: true`).
-  8. If `claude auth status` (JSON) has `loggedIn` false: print `Capture uses your own Claude subscription through the claude CLI. Sign in once:` and run `claude auth login` with `stdio: 'inherit'`, then check again. If it is still false, warn: `Capture stays off until you run: claude auth login`.
+  8. Unless `config.json` already has a `claudeToken`, print `Capture uses your own Claude subscription. Claude will now create a long-lived token for it (setup-token):` and run `claude setup-token` with `stdio: 'inherit'`. Then ask, with the input hidden: `Paste the token it printed (starts with sk-ant-):`. Store it as `claudeToken` (this step runs before writing `config.json`, so the order is 1-4, 8, 5-7, 9). An empty answer means: warn `Capture stays off until you run setup again.` and store `null`. `--claude-token <t>` skips the prompt, for re-runs and tests.
   9. Print: `SamePage is set up. Capture runs in: <folders>. Type /private in a session to skip it, /forget to drop what was not captured yet. Undo: npx -y <url>/samepage-setup.tgz --uninstall`.
   - `--uninstall`: `removeHooks`, then `claude mcp remove samepage -s user`, then delete `<home>`.
 - `scripts/build-setup.mjs`: runs `npm pack ./integrations/claude-code --pack-destination public` and renames the result to `public/samepage-setup.tgz`.
@@ -550,7 +551,7 @@ echo "We decided with Joao to price per seat." | node -e "<spawn claude with san
 - [ ] **Step 4:** Run the user's own setup command for real: `npx -y https://samepage.scooli.workers.dev/samepage-setup.tgz <their token>`. The user pastes it, so the token never goes through this session. Use `--folders "C:\PROJECTS\Scooli"`. Expected:
   - `~/.claude/settings.json` has the four hooks;
   - `claude mcp list` shows `samepage`;
-  - `claude auth status` shows `loggedIn: true`.
+  - `config.json` has a `claudeToken`, and the extractor's first pass authenticates with it.
 - [ ] **Step 5:** The user opens a new desktop session in `C:\PROJECTS\Scooli` and holds a short real conversation with a clear company decision (≥ 3 messages, ≥ 1500 characters). They then end the session (archive or close it).
   - Expected within ~1 minute: `~/.samepage/capture.log` shows `final: recorded ≥1 … update yes`.
   - `search_context` finds the entry with `source: claude_code`.
