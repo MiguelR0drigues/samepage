@@ -61,6 +61,7 @@ export function dashboardRoutes(getStore: (env: Env) => Store) {
     const cutoff = resumed ? stored : person.dashboardSeenAt ?? new Date(now.getTime() - FIRST_VISIT_MS);
     const q = (c.req.query('q') ?? '').trim();
     // Sequential: each read takes a pooled connection, and the Worker has few.
+    // shortcut: loads every change since the cutoff (shows 50); cap it if absences get long
     const changes = await store.changesSince(cutoff, person.id);
     const results = q ? await store.search(q, { limit: 20 }) : null;
     const timeline = await store.listEntries({ type: 'decision', limit: 20 });
@@ -180,6 +181,8 @@ export function dashboardRoutes(getStore: (env: Env) => Store) {
     }
     return c.redirect(`/dashboard/workstreams/${to}`, 303);
   });
+
+  app.get('*', (c, next) => c.req.path === '/dashboard/' ? c.redirect('/dashboard') : next());
 
   // Keep last: unknown dashboard paths answer here instead of falling through to the bearer middleware.
   app.all('*', () => message(404, 'Not found.'));

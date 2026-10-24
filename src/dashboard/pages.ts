@@ -41,10 +41,10 @@ const proposalCard = (me: Person, people: Person[], p: Entry, target: Entry | nu
 <div class="row"><h3><a href="${entryHref(p)}">${p.title}</a></h3>
 <div class="mut">by ${names(people, p.authors)} · ${day(p.createdAt)}</div>
 <div class="pre">${p.content}</div><div class="mut">Revises: ${link(target)}</div>
-${p.status !== 'open' ? '' : p.authors.includes(me.id) || p.recordedBy === me.id
+${p.status !== 'open' ? html`<p>${statusPill(p)} ${p.resolutionNote && html`<span class="mut">Reason: ${p.resolutionNote}</span>`}</p>` : p.authors.includes(me.id) || p.recordedBy === me.id
   ? html`<p class="mut">Waiting for another team member — you cannot close your own proposal.</p>`
   : html`<div><form class="inl" method="post" action="/dashboard/proposals/${p.id}/accept"><button>Accept</button></form>
-<form class="inl" method="post" action="/dashboard/proposals/${p.id}/reject"><input name="reason" placeholder="Reason (optional)"><button>Reject</button></form></div>`}</div>`;
+<form class="inl" method="post" action="/dashboard/proposals/${p.id}/reject"><input name="reason" aria-label="Reason" placeholder="Reason (optional)"><button>Reject</button></form></div>`}</div>`;
 
 export const proposalsPage = (d: { person: Person; people: Person[]; items: { proposal: Entry; target: Entry | null }[] }) =>
   layout({ title: 'Proposals', active: 'proposals', person: d.person, body: html`
@@ -136,10 +136,10 @@ ${w.resolutionNote && html`<p class="mut">${w.resolutionNote}</p>`}
 <div class="tl">${d.updates.length ? d.updates.map((u) => html`<div><span class="mut">${day(u.createdAt)}</span> · <a href="${entryHref(u)}">${u.title}</a>
 <span class="mut">· by ${names(d.people, u.authors)}</span><div class="pre">${u.content}</div></div>`) : html`<span class="mut">No updates yet.</span>`}</div>
 <div class="t">Manage</div>
-<form class="inl" method="post" action="${act}/rename"><input name="title" value="${w.title}" required><button>Rename</button></form>
-<form class="inl" method="post" action="${act}/status"><select name="status">
+<form class="inl" method="post" action="${act}/rename"><input name="title" aria-label="Workstream title" value="${w.title}" required><button>Rename</button></form>
+<form class="inl" method="post" action="${act}/status"><select name="status" aria-label="Status">
 ${(['in_progress', 'blocked', 'done'] as const).map((s) => html`<option value="${s}" ${s === w.status ? 'selected' : ''}>${s}</option>`)}
 </select><button>Set status</button></form>
 ${d.others.length ? html`<form class="inl" method="post" action="${act}/merge" onsubmit="return confirm('Move all updates and close this workstream?')">
-<select name="into">${d.others.map((o) => html`<option value="${o.id}">${o.title}</option>`)}</select><button>Merge into</button></form>` : ''}` });
+<select name="into" aria-label="Workstream to merge into">${d.others.map((o) => html`<option value="${o.id}">${o.title}</option>`)}</select><button>Merge into</button></form>` : ''}` });
 };

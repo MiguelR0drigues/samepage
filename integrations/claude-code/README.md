@@ -51,7 +51,7 @@ Commands are shown for bash and for PowerShell. In PowerShell use `curl.exe` (pl
    - `npm run person:add -- meet "Meet" --system`
 
    Prefix each with `DATABASE_URL="<direct string>"` in bash. Each command prints that person's setup command (with their token) once. Send it to them through a private channel.
-   Lost or leaked token: `npm run person:rotate -- <id>` prints a new setup command and the old token stops working immediately.
+   Lost or leaked token: `npm run person:rotate -- <id>` prints a new setup command and the old token stops working immediately. If the token may have been used, also set a new `DASHBOARD_SECRET` (this signs everyone out of the dashboard).
 4. Log in and set the secrets: `npx wrangler login`, then `npx wrangler secret put DATABASE_URL` (paste the pooled string) and `npx wrangler secret put DASHBOARD_SECRET` (paste a long random value, e.g. from `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`; it signs dashboard links and sessions). For `wrangler dev`, put `DASHBOARD_SECRET=dev` in `.dev.vars`.
 5. Deploy: `npm run deploy`. Wrangler prints the Worker URL (`https://samepage.<account>.workers.dev`). Set `SAMEPAGE_URL` to it when running `person:add` if it differs from the default. Current deployment: `https://samepage.scooli.workers.dev` (Scooli Cloudflare account).
 6. Check it:

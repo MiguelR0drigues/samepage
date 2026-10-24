@@ -76,6 +76,12 @@ describe('dashboard sign-in', () => {
     expect(res.headers.get('content-type')).toContain('text/html');
     expect(await res.text()).toContain('Not found.');
   });
+
+  it('a trailing slash redirects to /dashboard', async () => {
+    const res = await get(app, '/dashboard/', await signIn(app, store, 'miguel'));
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('/dashboard');
+  });
 });
 
 const decision = (title: string) => ({ type: 'decision' as const, title, content: 'We charge per seat.', area: 'pricing' });
@@ -255,6 +261,9 @@ describe('proposals', () => {
     expect(res.status).toBe(303);
     expect((await store.getEntry(a.id))!.status).toBe('active');
     expect((await store.getEntry(p.id))!.resolutionNote).toBe('Too risky');
+    const page = await (await get(app, `/dashboard/entries/${p.id}`, await signIn(app, store, 'miguel'))).text();
+    expect(page).toContain('rejected');
+    expect(page).toContain('Reason: Too risky');
   });
 
   it('a bad id is 404', async () => {

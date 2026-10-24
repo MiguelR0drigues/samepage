@@ -16,4 +16,4 @@ export interface Entry {
 }
 export type NewEntry = Omit<Entry, 'id' | 'createdAt' | 'updatedAt' | 'updatedBy' | 'deletedAt' | 'deletedBy'>;
 export interface Change { kind: 'new' | 'changed' | 'removed'; entry: Entry }
-export interface Snapshot { version: 1; people: (Person & { tokenHash: string; dashboardNonce: string | null })[]; entries: Entry[] }
+export interface Snapshot { version: 1; people: (Person & { tokenHash: string; dashboardNonce?: string | null })[]; entries: Entry[] }
