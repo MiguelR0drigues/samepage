@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DEFAULT_DAILY_LIMIT, LOCK_STALE_MS } from './limits.mjs';
 
-/** @typedef {{ url: string, token: string, folders: string[], dailyLimit: number, claudePath: string | null }} Config */
+/** @typedef {{ url: string, token: string, folders: string[], dailyLimit: number, claudePath: string | null, claudeToken: string | null }} Config */
 /** @typedef {{ transcriptPath: string | null, cwd: string | null, lastActivity: number, processedLine: number, processedAt: number, skipUntilLine: number, private: boolean, notes: string[], notice: string | null }} SessionState */
 
 const readJson = (/** @type {string} */ file) => {
@@ -21,6 +21,7 @@ export function readConfig(home) {
     folders: Array.isArray(c.folders) ? c.folders : [],
     dailyLimit: Number.isFinite(c.dailyLimit) ? c.dailyLimit : DEFAULT_DAILY_LIMIT,
     claudePath: typeof c.claudePath === 'string' ? c.claudePath : null,
+    claudeToken: typeof c.claudeToken === 'string' ? c.claudeToken : null,
   };
 }
 
@@ -58,18 +59,29 @@ export function listSessions(home) {
  */
 export function takeLock(home, id, now = Date.now()) {
   const file = path.join(home, 'locks', safe(id));
-  fs.mkdirSync(path.dirname(file), { recursive: true });
   const create = () => {
-    try { fs.writeFileSync(file, String(now), { flag: 'wx' }); return true; } catch { return false; }
+    try { fs.closeSync(fs.openSync(file, 'wx')); return true; } catch (e) {
+      if (/** @type {any} */ (e).code === 'EEXIST') return false;
+      throw e;
+    }
   };
-  if (!create()) {
-    const taken = Number(fs.readFileSync(file, 'utf8'));
-    if (now - taken <= LOCK_STALE_MS) return null; // a lock with unreadable content (NaN) counts as stale
-    try { fs.unlinkSync(file); } catch { /* another process replaced it */ }
-    if (!create()) return null;
-  }
-  return () => { try { fs.unlinkSync(file); } catch { /* already gone */ } };
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    if (!create()) {
+      let age;
+      try { age = now - fs.statSync(file).mtimeMs; } catch { return create() ? release(file) : null; } // released meanwhile
+      if (age <= LOCK_STALE_MS) return null;
+      // claim the stale lock atomically: only the process whose rename succeeds goes on
+      const claimed = `${file}.${process.pid}.${now}`;
+      try { fs.renameSync(file, claimed); } catch { return null; }
+      try { fs.unlinkSync(claimed); } catch { /* best effort */ }
+      if (!create()) return null;
+    }
+    return release(file);
+  } catch { return null; }
 }
+
+const release = (/** @type {string} */ file) => () => { try { fs.unlinkSync(file); } catch { /* already gone */ } };
 
 const dayKey = (/** @type {number} */ now) => {
   const d = new Date(now);

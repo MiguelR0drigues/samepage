@@ -28,9 +28,11 @@ it('listSessions is empty before any save', () => {
 
 it('readConfig returns null when missing, the parsed config when present', () => {
   expect(st.readConfig(home)).toBeNull();
-  const c = { url: 'u', token: 't', folders: ['/a'], dailyLimit: 20, claudePath: null };
+  const c = { url: 'u', token: 't', folders: ['/a'], dailyLimit: 20, claudePath: null, claudeToken: 'oat' };
   fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify(c));
   expect(st.readConfig(home)).toEqual(c);
+  fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify({ url: 'u', token: 't' }));
+  expect(st.readConfig(home)).toEqual({ url: 'u', token: 't', folders: [], dailyLimit: 20, claudePath: null, claudeToken: null });
 });
 
 it('takeLock is exclusive, reusable after release, and replaces a stale lock', () => {
@@ -42,6 +44,25 @@ it('takeLock is exclusive, reusable after release, and replaces a stale lock', (
   expect(again).toBeTypeOf('function');
   expect(st.takeLock(home, 's1', 1000 + 1000)).toBeNull();
   expect(st.takeLock(home, 's1', Date.now() + LOCK_STALE_MS + 60_000)).toBeTypeOf('function');
+});
+
+it('takeLock treats an empty lock file as held and never throws', () => {
+  fs.mkdirSync(path.join(home, 'locks'), { recursive: true });
+  fs.writeFileSync(path.join(home, 'locks', 's2'), '');
+  expect(st.takeLock(home, 's2')).toBeNull();
+  fs.writeFileSync(path.join(home, 'file'), '');
+  expect(st.takeLock(path.join(home, 'file'), 's3')).toBeNull(); // unusable home
+});
+
+it('takeLock replaces a stale lock exactly once and leaves no claim files behind', () => {
+  st.takeLock(home, 's4', 1000);
+  const later = Date.now() + LOCK_STALE_MS + 60_000;
+  const release = st.takeLock(home, 's4', later);
+  expect(release).toBeTypeOf('function');
+  expect(st.takeLock(home, 's4')).toBeNull();
+  expect(fs.readdirSync(path.join(home, 'locks'))).toEqual(['s4']);
+  release!();
+  expect(st.takeLock(home, 's4')).toBeTypeOf('function');
 });
 
 it('usage counts per local day and resets on a new day', () => {
