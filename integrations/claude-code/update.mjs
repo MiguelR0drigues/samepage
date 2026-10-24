@@ -18,8 +18,8 @@ export function dueForUpdate(home, now) {
   } catch { return true; }
 }
 
-// relative, posix, inside home
-const safePath = (/** @type {string} */ p) => !!p && !p.includes('\\') && !p.includes('\0') && !path.posix.isAbsolute(p) && !/^[a-z]:/i.test(p) && !p.split('/').includes('..');
+// what the build emits: package.json, top-level scripts, lib/**; so never config.json, sessions/, a stream (:) or a path outside home
+const safePath = (/** @type {string} */ p) => /^(package\.json|[\w.-]+\.mjs|lib\/[\w./-]+)$/.test(p) && !p.split('/').some((seg) => !seg || seg === '.' || seg === '..');
 
 /**
  * @param {{ home: string, settingsFile: string, nodePath: string, fetchFn?: typeof fetch, now: number }} o
@@ -27,6 +27,7 @@ const safePath = (/** @type {string} */ p) => !!p && !p.includes('\\') && !p.inc
  */
 export async function applyUpdate({ home, settingsFile, nodePath, fetchFn = fetch }) {
   /** @type {string[]} */ const temps = [];
+  /** @type {{ file: string, bak: string | null }[]} */ const done = [];
   try {
     const config = readConfig(home);
     if (!config) throw new Error('no config.json');
@@ -50,10 +51,21 @@ export async function applyUpdate({ home, settingsFile, nodePath, fetchFn = fetc
       temps.push(tmp);
       fs.writeFileSync(tmp, content);
     }
-    for (const [file] of writes) fs.renameSync(`${file}.${process.pid}.tmp`, file);
+    for (const [file] of writes) {
+      // a copy, so the old file stays in place until the rename replaces it
+      const bak = fs.existsSync(file) ? `${file}.${process.pid}.bak` : null;
+      if (bak) { temps.push(bak); fs.copyFileSync(file, bak); }
+      done.push({ file, bak });
+      fs.renameSync(`${file}.${process.pid}.tmp`, file);
+    }
     fs.writeFileSync(versionFile, version); // last: a failed update is retried
+    for (const { bak } of done) if (bak) fs.rmSync(bak, { force: true });
     return 'updated';
   } catch (e) {
+    // all or nothing: a new hook.mjs next to an old lib/ could fail to load and end every later update
+    for (const { file, bak } of done.reverse()) {
+      try { if (bak) fs.renameSync(bak, file); else fs.rmSync(file, { force: true }); } catch { /* best effort */ }
+    }
     for (const t of temps) fs.rmSync(t, { force: true });
     try { log(home, `update failed: ${/** @type {Error} */ (e).message}`); } catch { /* nowhere to log */ }
     return 'failed';

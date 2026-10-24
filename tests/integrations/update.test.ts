@@ -71,11 +71,26 @@ describe('a failure leaves the install as it was and logs one line', () => {
   });
 });
 
-it.each(['../x', '/etc/x', 'C:\\x', 'a/../../x'])('refuses the path %s and writes nothing', async (bad) => {
+it.each(['../x', '/etc/x', 'C:\\x', 'a/../../x', 'config.json', 'CONFIG.JSON', 'sessions/s1.json', 'capture.log', 'hook.mjs:x', '.', './', 'lib/../config.json'])('refuses the path %s and writes nothing', async (bad) => {
   const before = listing();
   expect(await apply(serve({ version: '2', files: { 'ok.mjs': '1', [bad]: 'x' } }))).toBe('failed');
   expect(listing()).toEqual([...before, 'home/capture.log'].sort());
   expect(fs.readFileSync(path.join(home, 'version'), 'utf8')).toBe('1');
+});
+
+it('a failure midway restores every file that was already replaced', async () => {
+  fs.mkdirSync(path.join(home, 'lib'));
+  fs.writeFileSync(path.join(home, 'lib', 'a.mjs'), 'old-a');
+  fs.mkdirSync(path.join(home, 'blocked.mjs')); // cannot be replaced by a file
+  fs.writeFileSync(settingsFile, '{}');
+  const before = listing();
+  expect(await apply(serve({ version: '2', files: { 'hook.mjs': 'new', 'new.mjs': 'n', 'lib/a.mjs': 'new-a', 'blocked.mjs': 'x' } }))).toBe('failed');
+  expect(fs.readFileSync(path.join(home, 'hook.mjs'), 'utf8')).toBe('old');
+  expect(fs.readFileSync(path.join(home, 'lib', 'a.mjs'), 'utf8')).toBe('old-a');
+  expect(fs.readFileSync(path.join(home, 'version'), 'utf8')).toBe('1');
+  expect(fs.readFileSync(settingsFile, 'utf8')).toBe('{}');
+  expect(listing()).toEqual([...before, 'home/capture.log'].sort());
+  expect(log()[0]).toContain('update failed');
 });
 
 it('an invalid settings.json fails the update before any file is replaced', async () => {
