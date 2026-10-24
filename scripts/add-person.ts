@@ -22,7 +22,9 @@ if (isMain(import.meta.url)) {
     process.exitCode = 1;
   } else {
     await runCli(async (store) => {
-      const { person, token } = await createPerson(store, { id, name, isSystem: flags.includes('--system') });
+      // PowerShell drops the `--` after `npm run`, so npm swallows --system and exposes it as npm_config_system.
+      const isSystem = flags.includes('--system') || process.env.npm_config_system === 'true';
+      const { person, token } = await createPerson(store, { id, name, isSystem });
       console.log(`Added ${person.id} (${person.name}). Send them this setup command privately (shown once, it contains their token):\n${setupCommand(token)}`);
     });
   }
