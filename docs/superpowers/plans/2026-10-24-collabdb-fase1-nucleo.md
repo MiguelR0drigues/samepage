@@ -405,3 +405,30 @@ Shared team memory: decisions, personal views, principles and explorations about
   - ask "record this: we decided to use Neon, with <teammate>": the entry appears with both authors;
   - on another machine or with another token, open a session: the change appears in the summary.
 - [ ] **Step 6:** Commit `feat: deploy to Cloudflare Workers with Neon`.
+
+---
+
+### Task 9: Progress-tracking entry types (`update`, `workstream`)
+
+Added after the plan was approved (spec section 8, item 1). Only the data model and minimal tools — rename/merge and the dashboard come in Phase 1.5; automatic updates in Phase 2.
+
+**Files:**
+- Modify: `src/domain/types.ts`, `src/storage/postgres/schema.ts` (+ generated migration), `src/storage/postgres/store.ts`, `src/storage/store.ts` (only if `EntryFilter`/`EntryPatch` need the new field), `src/service/memory.ts`, `src/mcp/server.ts`, `src/mcp/format.ts`
+- Test: `tests/service/memory.test.ts`, `tests/storage/postgres-store.test.ts`, `tests/http/app.test.ts`
+
+**Interfaces:**
+- `EntryType` gains `'update' | 'workstream'`. `EntryStatus` gains `'in_progress' | 'blocked' | 'done'` (workstreams only; updates are `'active'`).
+- `Entry` gains `workstreamId: string | null` (column `workstream_id uuid null references entries.id`). Included in `NewEntry`, export/import and `formatEntry` (`workstream: <id>` part when present).
+- `RecordInput` gains `workstreamId?: string`. `Memory.record`:
+  - `type: 'update'` requires `workstreamId` of an existing, non-deleted `workstream` entry, else `MemoryError('An update needs an existing workstream: use list_workstreams or record a workstream first.')`;
+  - `type: 'workstream'` starts with status `'in_progress'`;
+  - `workstreamId` on any other type → `MemoryError('Only updates can link to a workstream.')`.
+- New `Memory.setWorkstreamStatus(actor: Person, id: string, status: 'in_progress' | 'blocked' | 'done'): Promise<Entry>` — any human team member (not only authors); system actors rejected; target must be a non-deleted `workstream`.
+- MCP: `record`'s `type` enum gains `update` and `workstream`, plus optional `workstream_id`; new tools `set_workstream_status` (`id`, `status`) and `list_workstreams` (`status?`, `limit?` → `store.listEntries({type:'workstream'})`). The tool-list test now expects 12 tools.
+- The session summary is unchanged.
+
+- [ ] **Step 1: Write the failing tests:** record a workstream (status `in_progress`); record an update linked to it; update without/with a bogus/deleted workstream id → MemoryError; `workstreamId` on a decision → MemoryError; any human can set a workstream to `blocked` then `done`; system actor cannot; export/import round trip keeps `workstreamId`; MCP lists 12 tools and `record` + `list_workstreams` work end to end.
+- [ ] **Step 2:** Run them. Expected: FAIL.
+- [ ] **Step 3:** Implement (schema change + `npm run db:generate`).
+- [ ] **Step 4:** Run `npx vitest run && npm run typecheck`. Expected: PASS.
+- [ ] **Step 5:** Commit `feat: progress-tracking entry types (update, workstream)`.

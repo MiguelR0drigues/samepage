@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="pt"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SamePage dashboard</title>
+<style>
+:root{--bg:#f7f7f5;--card:#fff;--soft:#f1f0ec;--line:#e2e0d9;--tx:#1f1f1d;--mut:#6b6a65;--ok:#e6f3dc;--okt:#2f5a0f;--acc:#e6f1fb;--acct:#0c447c;--warn:#faeeda;--warnt:#633806}
+@media (prefers-color-scheme:dark){:root{--bg:#161615;--card:#1f1f1e;--soft:#262625;--line:#3a3936;--tx:#ecebe6;--mut:#a3a29c;--ok:#27500a;--okt:#c0dd97;--acc:#0c447c;--acct:#b5d4f4;--warn:#633806;--warnt:#fac775}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.6 system-ui,sans-serif;padding:16px}
+.sp{max-width:960px;margin:auto;display:grid;grid-template-columns:180px minmax(0,1fr);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.nav{background:var(--soft);padding:14px 8px;display:flex;flex-direction:column;gap:2px}
+.nav button{all:unset;cursor:pointer;padding:8px 12px;border-radius:8px;color:var(--mut)}
+.nav button.on{background:var(--card);color:var(--tx);font-weight:500}
+.main{padding:20px 22px;background:var(--card);min-height:520px}
+.row{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px}
+.pill{font-size:11px;padding:2px 8px;border-radius:999px;display:inline-block}
+.ok{background:var(--ok);color:var(--okt)}.acc{background:var(--acc);color:var(--acct)}.warn{background:var(--warn);color:var(--warnt)}
+.mut{color:var(--mut)}input,select,button.b{font:inherit;color:var(--tx);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:7px 10px}
+.kpi{background:var(--soft);border-radius:8px;padding:10px}.kpi b{display:block;font-size:22px;font-weight:500}
+.tl{border-left:2px solid var(--line);padding-left:12px;line-height:2}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:8px}.g3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+h3{margin:0 0 6px;font-weight:500}.t{font-weight:500;margin:14px 0 8px}
+@media (max-width:640px){.sp{grid-template-columns:1fr}.nav{flex-direction:row;overflow-x:auto}.g2,.g3{grid-template-columns:1fr}}
+</style></head><body>
+<div class="sp">
+<div class="nav">
+<div style="font-weight:500;padding:4px 12px 12px">SamePage</div>
+<button class="on" data-v="home">Início</button>
+<button data-v="dec">Decisão</button>
+<button data-v="prop">Propostas <span class="pill warn">2</span></button>
+<button data-v="who">Quem pensa o quê</button>
+</div>
+<div class="main" id="m"></div>
+</div>
+<script>
+const V={
+home:`<div style="display:flex;gap:8px;margin-bottom:14px"><input placeholder="Pesquisar decisões, visões, princípios" style="flex:1"><select><option>Todas as áreas</option><option>Produto</option><option>Engenharia</option><option>Marketing</option></select></div>
+<div class="g3" style="margin-bottom:14px"><div class="kpi"><span class="mut">Decisões ativas</span><b>34</b></div><div class="kpi"><span class="mut">Novidades para ti</span><b>5</b></div><div class="kpi"><span class="mut">Sem consenso total</span><b>6</b></div></div>
+<div class="t">Novidades desde a tua última visita</div>
+<div class="row"><span class="pill ok">nova</span> Pricing por lugar, não por uso <span class="mut">· produto · João · Meet de ontem</span></div>
+<div class="row"><span class="pill acc">alterada</span> Usar Neon em vez de Supabase <span class="mut">· engenharia · Miguel</span></div>
+<div class="row"><span class="pill warn">proposta</span> Rever tom de voz nos posts de LinkedIn <span class="mut">· marketing · Ana</span></div>
+<div class="t">Linha do tempo</div>
+<div class="tl mut">23 out · Pricing por lugar<br>20 out · Cloudflare Workers para o servidor<br>14 out · Posicionamento: "memória da equipa", não "wiki"</div>`,
+dec:`<div class="mut">Produto · decidida em Meet · 23 out</div>
+<h3>Pricing por lugar, não por uso</h3>
+<div style="margin-bottom:12px"><span class="pill ok">ativa</span> <span class="pill warn">maioria, sem consenso total</span></div>
+<div class="row"><b>Questão</b><div class="mut">Como cobrar no lançamento?</div></div>
+<div class="g2"><div class="row"><b>Miguel</b> · por lugar<div class="mut">Previsível para o cliente, fácil de vender.</div></div><div class="row"><b>João</b> · por uso<div class="mut">Alinha custo e valor; menos atrito a entrar.</div></div></div>
+<div class="row"><b>Veredicto</b><div>Por lugar no lançamento, rever aos 3 meses.</div><div class="mut">Porquê avançar sem consenso: precisamos de preço fechado para a landing page.</div></div>
+<div class="t">Histórico</div>
+<div class="tl mut">23 out · esta decisão<br>02 out · substituiu "Freemium sem limites"</div>`,
+prop:`<div class="t" style="margin-top:0">Propostas abertas</div>
+<div class="row"><b>Rever tom de voz nos posts de LinkedIn</b> <span class="mut">· Ana · há 2 dias</span><div class="mut" style="margin:4px 0 8px">Revê: "Tom formal e técnico" (Miguel, João · unânime)<br>Sugestão: tom mais próximo, menos jargão. Justificação: engagement caiu 30%.</div><button class="b">Aceitar</button> <button class="b">Rejeitar</button> <button class="b">Ver decisão original</button></div>
+<div class="row"><b>Trocar Vitest por Jest</b> <span class="mut">· tu · hoje</span><div class="mut">Revê: "Vitest para testes". À espera de outra pessoa da equipa — não podes fechar a tua própria proposta.</div></div>`,
+who:`<select style="margin-bottom:12px"><option>Tema: posicionamento</option><option>Tema: pricing</option></select>
+<div class="g3"><div class="row"><b>Miguel</b><div class="mut">"Memória da equipa para agentes" — focar em equipas técnicas primeiro.</div><div class="mut" style="font-size:12px">visão · 12 out</div></div>
+<div class="row"><b>João</b><div class="mut">Vender a founders: "decisões que não se perdem".</div><div class="mut" style="font-size:12px">visão · 18 out</div></div>
+<div class="row"><b>Ana</b><div class="mut">Ainda sem visão registada.</div></div></div>
+<div class="row"><b>Decisão atual</b> <span class="mut">· 14 out</span><div>Posicionamento: "memória da equipa", não "wiki".</div></div>`};
+const m=document.getElementById('m');m.innerHTML=V.home;
+document.querySelectorAll('.nav button').forEach(b=>b.onclick=()=>{document.querySelectorAll('.nav button').forEach(x=>x.classList.remove('on'));b.classList.add('on');m.innerHTML=V[b.dataset.v]});
+</script></body></html>

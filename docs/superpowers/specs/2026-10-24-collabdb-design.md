@@ -176,8 +176,24 @@ Decisões tomadas por WhatsApp ou presencialmente entram pelo registo explícito
 6. **Transparência:** cada pessoa vê as novidades no início da sessão, por isso algo pessoal que escape é detetado depressa.
 
 ## 8. Fases sugeridas
-1. **Núcleo:** base de dados, interface de armazenamento, servidor MCP com tokens, registo explícito, consulta, resumo de início de sessão, exportar e importar.
+1. **Núcleo:** base de dados, interface de armazenamento, servidor MCP com tokens, registo explícito, consulta, resumo de início de sessão, exportar e importar. Inclui já os tipos de entrada para **acompanhamento de progresso**:
+   - `update`: o que foi feito e o próximo passo, com autor e área, ligado a uma frente de trabalho;
+   - `workstream`: uma frente de trabalho, com estado `in_progress`, `blocked` ou `done`.
+1.5. **Dashboard web** (depois de o núcleo estar em produção), servido pelo mesmo Worker.
+   - **Só de leitura.** As exceções são aceitar e rejeitar propostas, e renomear, juntar ou fechar frentes de trabalho.
+   - **Ecrãs:**
+     - Início: novidades desde a última visita, pesquisa e linha do tempo;
+     - Decisão: questão, posições por pessoa, veredicto com o porquê de avançar sem consenso, histórico de substituições;
+     - Propostas;
+     - Quem pensa o quê: visões lado a lado por tema;
+     - Equipa e atividade: por pessoa, a frente atual, a última atividade e os bloqueios; por frente, a linha do tempo do progresso.
+   - **Login:** a ferramenta MCP `open_dashboard` devolve um link de uso único, assinado e de curta duração, gerado a partir da identidade de quem chama. O link abre uma sessão por cookie de cerca de 30 dias, sem passwords nem emails.
+   - **Mockup:** `docs/mockups/dashboard.html`.
 2. **Captura automática no Claude Code:** hooks, extrator local, controlos de privacidade, pendentes e correções.
+   - Além das decisões, o extrator gera **um update curto por sessão**. Liga-o a uma frente existente ou cria uma nova, usando o repositório e o ramo git da sessão como pista.
+   - O modelo é híbrido: o extrator infere e propõe, e as pessoas podem renomear, juntar ou fechar frentes (pelo agente ou pelo dashboard), ou criá-las à mão.
+   - Aplicam-se as mesmas regras de privacidade.
+   - O tom é "equipa em sintonia": nada de métricas de produtividade nem contagem de horas.
 3. **Google Meet:** pasta partilhada e rotina agendada; Apps Script opcional.
 4. **Mais tarde (fora da v1):**
    - Codex e Hermes, que guardam sessões em disco e podem usar o mesmo extrator local;
