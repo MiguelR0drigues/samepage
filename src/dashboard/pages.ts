@@ -100,10 +100,12 @@ ${current.length ? html`<div class="t">Current decisions</div>${current.map((e) 
 };
 
 const wsLink = (w: Entry) => html`<a href="${entryHref(w)}">${w.title}</a>`;
-const wsRow = (w: Entry) => html`<div class="row">${wsLink(w)} ${statusPill(w)} <span class="mut">· ${day(w.updatedAt)}</span></div>`;
 
 export const teamPage = (d: { person: Person; people: Person[]; workstreams: Entry[]; updates: Entry[]; recent: Entry[] }) => {
   const byId = new Map(d.workstreams.map((w) => [w.id, w]));
+  // Updates are newest first, so the first one found is the latest; progress updates never touch the workstream's own updatedAt.
+  const wsRow = (w: Entry) => html`<div class="row">${wsLink(w)} ${statusPill(w)}
+<span class="mut">· ${day(d.updates.find((u) => u.workstreamId === w.id)?.createdAt ?? w.createdAt)}</span></div>`;
   return layout({ title: 'Team', active: 'team', person: d.person, body: html`${d.people.filter((p) => !p.isSystem).map((p) => {
     const own = (e: Entry) => e.recordedBy === p.id || e.authors.includes(p.id);
     const mine = d.workstreams.filter(own);

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Person } from '../../src/domain/types';
 import { issueLink, sessionToken } from '../../src/dashboard/auth';
+import { teamPage } from '../../src/dashboard/pages';
 import { createApp, sha256Hex } from '../../src/http/app';
 import { Memory } from '../../src/service/memory';
 import { PostgresStore } from '../../src/storage/postgres/store';
@@ -280,6 +281,8 @@ describe('proposals', () => {
 });
 
 const section = (body: string, tag: string, start: string) => body.split(tag).find((s) => s.startsWith(start))!;
+// The text of one labelled line of a team card (labels sit in <b>, each line ends at </div>).
+const line = (card: string, label: string) => card.split(`<b>${label}</b>`)[1]!.split('</div>')[0]!;
 const ws = (title: string) => ({ type: 'workstream' as const, title, content: 'About it.', area: 'gtm' });
 
 describe('Who thinks what', () => {
@@ -318,12 +321,51 @@ describe('Team', () => {
     await m.setWorkstreamStatus(miguel, w3.id, 'done');
     const body = await (await get(app, '/dashboard/team', await signIn(app, store, 'miguel'))).text();
     const [mCard, jCard] = [section(body, '<h3>', 'Miguel'), section(body, '<h3>', 'João')];
-    expect(mCard).toMatch(/Working on:[\s\S]*Launch site/);
-    expect(mCard).toMatch(/Last activity:[\s\S]*Old thing/);
+    expect(line(mCard, 'Working on:')).toContain('Launch site');
+    expect(line(mCard, 'Last activity:')).toContain('Old thing');
     expect(mCard).toMatch(/Done \(1\)[\s\S]*Old thing/);
     expect(mCard).not.toContain('Blocked:');
     expect(jCard).toMatch(/Blocked:[\s\S]*Pricing page/);
     expect(jCard).not.toContain('Done (');
+  });
+
+  it('Working on skips done workstreams, falls back to the latest open one; Last activity counts authored entries', async () => {
+    const m = new Memory(store);
+    const up = (workstreamId: string) => ({ type: 'update' as const, title: 'step', content: 'c', area: 'gtm', workstreamId });
+    const open = await m.record(miguel, ws('Open one'));
+    const closed = await m.record(miguel, ws('Closed one'));
+    await m.record(miguel, up(open.id));
+    await m.record(miguel, up(closed.id));
+    await m.setWorkstreamStatus(miguel, closed.id, 'done');
+    await m.record(miguel, ws('Newest open'));
+    await m.record(joao, ws('Older'));
+    await m.record(joao, ws('Newer'));
+    const finished = await m.record(joao, ws('Finished'));
+    await m.setWorkstreamStatus(joao, finished.id, 'done');
+    await m.record(miguel, { type: 'view', title: 'Joint view', content: 'c', area: 'gtm', authors: ['joao'] });
+    const body = await (await get(app, '/dashboard/team', await signIn(app, store, 'miguel'))).text();
+    const [mCard, jCard] = [section(body, '<h3>', 'Miguel'), section(body, '<h3>', 'João')];
+    // The newer update sits on a done workstream, so the older update on an open one wins over the newest open workstream.
+    expect(line(mCard, 'Working on:')).toContain('Open one');
+    expect(line(jCard, 'Working on:')).toContain('Newer');
+    expect(line(jCard, 'Last activity:')).toContain('Joint view');
+    expect(line(jCard, 'Last activity:')).not.toContain('Finished');
+  });
+
+  it('a workstream row shows the day of its latest update, else its creation day', async () => {
+    const m = new Memory(store);
+    const [withUpdate, bare] = [await m.record(miguel, ws('Has update')), await m.record(miguel, ws('Bare'))];
+    const u = await m.record(miguel, { type: 'update', title: 'step', content: 'c', area: 'gtm', workstreamId: withUpdate.id });
+    const page = await teamPage({
+      person: miguel, people: [miguel], recent: [],
+      workstreams: [{ ...withUpdate, createdAt: new Date('2026-01-01'), updatedAt: new Date('2026-01-02') },
+        { ...bare, createdAt: new Date('2026-02-01'), updatedAt: new Date('2026-02-09') }],
+      updates: [{ ...u, createdAt: new Date('2026-03-05') }],
+    });
+    const body = String(page);
+    expect(body).toContain('2026-03-05');
+    expect(body).toContain('2026-02-01');
+    for (const stale of ['2026-01-01', '2026-01-02', '2026-02-09']) expect(body).not.toContain(stale);
   });
 
   it('a person with nothing recorded gets the empty states', async () => {

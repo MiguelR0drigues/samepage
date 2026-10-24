@@ -331,6 +331,7 @@ describe('Memory workstreams', () => {
     await memory.record(miguel, update(a.id));
     await memory.record(miguel, update(a.id));
     await expect(memory.mergeWorkstream(joao, a.id, a.id)).rejects.toThrow('cannot be merged into itself');
+    await expect(memory.mergeWorkstream(joao, a.id, a.id.toUpperCase())).rejects.toThrow('A workstream cannot be merged into itself.');
     await expect(memory.mergeWorkstream(meet, a.id, b.id)).rejects.toBeInstanceOf(MemoryError);
     await expect(memory.mergeWorkstream(joao, a.id, d.id)).rejects.toThrow('Entry not found');
     await expect(memory.mergeWorkstream(joao, d.id, a.id)).rejects.toThrow('Entry not found');

@@ -95,7 +95,8 @@ export class Memory {
 
   async mergeWorkstream(actor: Person, fromId: string, intoId: string): Promise<Entry> {
     assertHuman(actor);
-    if (fromId === intoId) throw new MemoryError('A workstream cannot be merged into itself.');
+    // Ids are uuids: Postgres treats them case-insensitively.
+    if (fromId.toLowerCase() === intoId.toLowerCase()) throw new MemoryError('A workstream cannot be merged into itself.');
     return this.store.transaction(async (tx) => {
       // Lock in id order so two people merging A->B and B->A at once cannot deadlock.
       for (const id of [fromId, intoId].sort()) await loadWorkstream(tx, id);
