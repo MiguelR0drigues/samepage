@@ -26,11 +26,11 @@ Flags (Claude passes them for you, except `--claude-token`; they also work by ha
 - `--name "<name>"`: your name. Required when there is no terminal.
 - `--folders "<a>;<b>"`: the folders that hold company work.
 - `--same-person`: you already joined from another computer. Use the same name and add this flag; this computer gets its own token and the other one keeps working.
-- `--login`: approve the Claude login on its own, without joining again. Use it if you skipped the login window or it did not open. Until it is approved capture is off, and Claude says so once per session.
+- `--login`: approve the Claude login on its own, without joining again: `npx -y https://samepage.scooli.workers.dev/samepage-setup.tgz --login`. Use it if you skipped the login window or it did not open. Until it is approved capture is off, and Claude says so once per session.
 - `--claude-token <t>`: terminal only. Give the Claude token yourself instead of approving the login. Never paste that token into a chat.
 - `--url <url>`: another SamePage server.
 
-Names match by their letters and digits, ignoring accents and case ("ana silva" is "Ana Silva"). If the name is taken, setup stops and says so. Two computers, one person: run again with the same name and `--same-person`. Two people with the same name: run again with a different `--name`, e.g. `"Ana Silva (Marketing)"`. In a terminal it asks instead.
+Names match by their Latin letters and digits, ignoring accents, case and punctuation ("ana silva" is "Ana Silva"). If the name is taken, setup stops and says so. Two computers, one person: run again with the same name and `--same-person`. Two people with the same name: run again with a different `--name`, e.g. `"Ana Silva (Marketing)"`. In a terminal it asks instead.
 
 Running the setup again on the same computer keeps your member and your token.
 
@@ -96,7 +96,7 @@ Commands are shown for bash and for PowerShell. In PowerShell use `curl.exe` (pl
    - bash: `DATABASE_URL="<direct string>" npm run db:migrate`
    - PowerShell: `$env:DATABASE_URL="<direct string>"; npm run db:migrate`
 
-   Run it again before any deploy that brings a new migration, and deploy right after it (step 5): the old Worker fails between the two, because the join-link migration drops `people.token_hash` after moving the tokens into the new `person_tokens` table (several tokens per person), so nobody has to set up again.
+   Run it again before any deploy that brings a new migration, and deploy right after it (for this repo: run it right before merging the pull request, since the Deploy workflow deploys on merge): the old Worker fails between the two, because the join-link migration drops `people.token_hash` after moving the tokens into the new `person_tokens` table (several tokens per person), so nobody has to set up again.
 3. Create the system person, and anyone you want to give a personal setup command instead of the team link (same `DATABASE_URL` as above; in PowerShell it stays set for the session):
    - `npm run person:add -- meet "Meet" --system`
    - `npm run person:add -- miguel "Miguel"`
@@ -104,17 +104,17 @@ Commands are shown for bash and for PowerShell. In PowerShell use `curl.exe` (pl
    Prefix each with `DATABASE_URL="<direct string>"` in bash. Each command prints that person's setup command (with their token) once. Send it to them through a private channel.
    Lost or leaked token, or someone who must lose access: `npm run person:rotate -- <id>` cuts off every computer of that person at once; the old tokens stop working immediately. It prints a new setup command: send it to them, or discard it to leave them out (there is no delete command). Anyone with the join link can join again, so to really lock someone out also run `npm run join:new` and share the new link with the rest of the team. If a token may have been used, also set a new `DASHBOARD_SECRET` (this signs everyone out of the dashboard).
 4. Log in and set the secrets: `npx wrangler login`, then `npx wrangler secret put DATABASE_URL` (paste the pooled string) and `npx wrangler secret put DASHBOARD_SECRET` (paste a long random value, e.g. from `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`; it signs dashboard links and sessions). For `wrangler dev`, put `DASHBOARD_SECRET=dev` in `.dev.vars`.
-5. Deploy: `npm run deploy` (it first builds `public/samepage-setup.tgz`, the installer, and `public/client.json`, the current client, which the Worker serves as static assets). The client version is computed from its files, so there is nothing to bump. Every deploy ships the current client to all teammates: their next session start after 24 hours picks it up (see Updates). Wrangler prints the Worker URL (`https://samepage.<account>.workers.dev`). Set `SAMEPAGE_URL` to it when running `person:add`, `person:rotate` or `join:new` if it differs from the default. Current deployment: `https://samepage.scooli.workers.dev` (Scooli Cloudflare account).
+5. Deploy: `npm run deploy`; in this repo the [Deploy workflow](../../.github/workflows/deploy.yml) runs it on every merge into `main` (it first builds `public/samepage-setup.tgz`, the installer, and `public/client.json`, the current client, which the Worker serves as static assets). The client version is computed from its files, so there is nothing to bump. Every deploy ships the current client to all teammates: their next session start after 24 hours picks it up (see Updates). Wrangler prints the Worker URL (`https://samepage.<account>.workers.dev`). Set `SAMEPAGE_URL` to it when running `person:add`, `person:rotate` or `join:new` if it differs from the default. Current deployment: `https://samepage.scooli.workers.dev` (Scooli Cloudflare account).
 6. Create the team join link (after the first deploy, still logged in to wrangler):
    - `npm run join:new`
 
    It stores a new random code as the Worker secret `JOIN_CODE` and prints the link `https://<worker>/join/<code>`. Share it with the team. Running it again replaces the link: the old one stops working, and people who already joined are not affected. Do this if the link leaks.
 7. Check it:
    - `curl https://<worker>/health` returns `ok` (PowerShell: `curl.exe https://<worker>/health`)
-   - `curl https://<worker>/client.json` returns the client files (PowerShell: `curl.exe https://<worker>/client.json`)
+   - `curl -I https://<worker>/client.json` shows `200` (PowerShell: `curl.exe -I https://<worker>/client.json`)
    - `curl https://<worker>/join/<code>` returns the join page, 200 (PowerShell: `curl.exe https://<worker>/join/<code>`)
    - `curl -H "Authorization: Bearer <token>" https://<worker>/summary` returns the summary header (PowerShell: `curl.exe -H "Authorization: Bearer <token>" https://<worker>/summary`)
 
-Later releases: run `db:migrate` if there is a new migration, then `npm run deploy`. Run `join:new` again only to replace the link.
+Later releases: if there is a new migration, run `db:migrate` right before the deploy (the merge, in this repo). Run `join:new` again only to replace the link.
 
 `npm run db:export` files contain the token hashes, so store them privately.
