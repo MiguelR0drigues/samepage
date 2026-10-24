@@ -224,8 +224,8 @@ export function readSession(token: string, secret: string): Promise<string | nul
 ### Task 6: Who-thinks-what, Team & activity, workstream page (rename / merge / status)
 
 **Files:**
-- Modify: `src/dashboard/pages.ts`, `src/dashboard/routes.ts`
-- Test: `tests/dashboard/routes.test.ts`
+- Modify: `src/dashboard/pages.ts`, `src/dashboard/routes.ts`, `src/mcp/server.ts`
+- Test: `tests/dashboard/routes.test.ts`, `tests/http/app.test.ts`
 
 **Interfaces:**
 - Consumes: `Memory.renameWorkstream/mergeWorkstream` (Task 2), `Memory.setWorkstreamStatus`, `EntryFilter.workstreamId` (Task 1).
@@ -241,6 +241,10 @@ export function readSession(token: string, secret: string): Promise<string | nul
   - Status: `<select name="status">` with `in_progress | blocked | done` (current selected) → POST `/status`; any other value → 400.
   - Merge: `<select name="into">` of the other non-done workstreams + `Merge into` button with `onsubmit="return confirm('Move all updates and close this workstream?')"` → POST `/merge`.
   - Success → `303` to the workstream page (merge → the target's page). `MemoryError` → 400 message page.
+- **MCP parity** (spec 8 item 1.5, added on `main` in 2d38f3a: the dashboard is optional and everything it does must also be possible through the agent). In `src/mcp/server.ts`, next to `set_workstream_status`:
+  - `rename_workstream` (`id`, `title`) → `memory.renameWorkstream`; description `Rename a workstream. Any team member can.`; returns `Renamed workstream <id>`.
+  - `merge_workstreams` (`from_id`, `into_id`) → `memory.mergeWorkstream`; description `Merge one workstream into another: moves all its updates and marks it done. Any team member can.`; returns `Merged <from_id> into <into_id>`.
+  - The tool-list test in `tests/http/app.test.ts` now expects 15 names.
 
 - [ ] **Step 1: Write the failing tests:**
   - `views side by side per area` → miguel and joao views in `positioning`, only miguel in `pricing`, an active decision in `positioning` → the `positioning` section has both names and the decision; the `pricing` section shows `No view recorded yet.` for joao.
@@ -248,6 +252,7 @@ export function readSession(token: string, secret: string): Promise<string | nul
   - `workstream page shows the progress timeline` → two updates appear newest first with author names.
   - `rename, status and merge from the dashboard` → joao renames miguel's W1 (303, new title); sets `done` (status `done`); `status=bogus` → 400; merge W2 into W1 → 303 to W1, W1 shows W2's update, W2 is `done` with `Merged into`; merge W1 into W1 → 400 `cannot be merged into itself`.
   - `bad workstream ids are 404` → `/dashboard/workstreams/abc`, a decision's id.
+  - `app.test.ts`: `rename_workstream and merge_workstreams work through MCP` → rename returns `Renamed workstream <id>` and the title changed; merge returns `Merged <a> into <b>` and A's update now belongs to B; merging into itself → `isError` with `cannot be merged into itself`.
 - [ ] **Step 2:** Run `npx vitest run tests/dashboard`. Expected: FAIL.
 - [ ] **Step 3:** Implement.
 - [ ] **Step 4:** Run `npx vitest run && npm run typecheck`. Expected: PASS.
