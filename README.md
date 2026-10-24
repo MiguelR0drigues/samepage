@@ -319,7 +319,7 @@ SamePage started as a tool for one small team and is young. Issues and pull requ
 
 How changes land:
 
-- `main` is protected: every change goes through a pull request, with passing CI and a review by the maintainer ([CODEOWNERS](.github/CODEOWNERS)).
+- `main` is protected: every change goes through a pull request with passing CI, and only the maintainer ([CODEOWNERS](.github/CODEOWNERS)) can merge.
 - Production is deployed only by the [Deploy workflow](.github/workflows/deploy.yml), when a pull request is merged into `main`.
 - On your first pull request, a bot asks you to sign the [Contributor License Agreement](CLA.md) with a comment. You keep the copyright in your work; the CLA lets the maintainer also offer SamePage under a commercial license.
 - Report security problems privately, as described in [SECURITY.md](SECURITY.md).
