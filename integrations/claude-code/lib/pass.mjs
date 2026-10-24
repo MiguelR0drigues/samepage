@@ -33,8 +33,9 @@ export async function runPass(id, mode, { home, config, env, fetch, runClaude, n
     const t = readTranscript(s.transcriptPath, Math.max(s.processedLine, s.skipUntilLine));
     if (!t.messages.length) return 'skipped';
     if (mode === 'mid' && t.messages.length < MID_SESSION_EVERY) return 'skipped';
-    if (t.userCount < MIN_USER_MESSAGES || t.chars < MIN_CHARS) {
-      if (mode !== 'final' || s.notes.length) return 'skipped';
+    // a tiny final tail after earlier passes still goes to the model, for the session update
+    if ((t.userCount < MIN_USER_MESSAGES || t.chars < MIN_CHARS) && !(mode === 'final' && s.notes.length)) {
+      if (mode !== 'final') return 'skipped';
       save({ processedLine: t.endLine, processedAt: now });
       return 'done';
     }

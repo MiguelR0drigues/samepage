@@ -149,6 +149,17 @@ it('tiny final session is marked done without calling claude', async () => {
   expect(loadSession(home, 's1')).toMatchObject({ processedLine: 4, processedAt: NOW });
 });
 
+it('tiny final tail with earlier notes still calls claude and sends the update', async () => {
+  session('s1', { transcriptPath: transcript(2, 'short'), notes: ['did a'] });
+  const { d, calls, claudeCalls } = deps();
+  expect(await runPass('s1', 'mid', d)).toBe('skipped');
+  expect(await runPass('s1', 'final', d)).toBe('done');
+  expect(claudeCalls).toHaveLength(1);
+  expect(claudeCalls[0].prompt).toContain('# Progress earlier in this session\ndid a');
+  expect(JSON.parse(calls[1]!.init.body).update).toMatchObject({ title: 'Pricing' });
+  expect(loadSession(home, 's1')).toMatchObject({ processedLine: 4, notes: ['did a', 'worked on pricing'] });
+});
+
 it('context or claude failure logs and leaves state unchanged', async () => {
   session('s1');
   const before = loadSession(home, 's1');
