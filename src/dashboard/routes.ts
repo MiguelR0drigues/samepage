@@ -1,15 +1,18 @@
-import { Hono } from 'hono';
-import { getCookie, setCookie } from 'hono/cookie';
+import { Hono, type Context } from 'hono';
+import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { csrf } from 'hono/csrf';
 import type { Entry, Person } from '../domain/types';
 import type { Env } from '../http/app';
 import { Memory, MemoryError } from '../service/memory';
 import type { Store } from '../storage/store';
 import { readSession, redeemLink, SESSION_TTL_S, sessionToken } from './auth';
-import { message } from './html';
+import { message, type Viewer } from './html';
 import { entryPage, homePage, proposalsPage, teamPage, viewsPage, workstreamPage } from './pages';
 
-export type DashVars = { store: Store; memory: Memory; person: Person; people: Person[] };
+export type DashVars = { store: Store; memory: Memory; person: Person; people: Person[]; openProposals: number };
+
+const viewer = (c: Context<{ Bindings: Env; Variables: DashVars }>): Viewer =>
+  ({ person: c.get('person'), people: c.get('people'), openProposals: c.get('openProposals') });
 
 export const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const HISTORY_MAX = 10;
@@ -49,7 +52,15 @@ export function dashboardRoutes(getStore: (env: Env) => Store) {
     c.set('memory', new Memory(store));
     c.set('person', person);
     c.set('people', people);
+    // For the nav badge on every page.
+    c.set('openProposals', (await store.listEntries({ type: 'proposal', status: 'open', limit: 50 })).length);
     await next();
+  });
+
+  app.post('/logout', (c) => {
+    deleteCookie(c, 'sp_session', { path: '/dashboard', secure: true });
+    deleteCookie(c, 'sp_visit', { path: '/dashboard' });
+    return c.redirect('/dashboard', 303);
   });
 
   app.get('/', async (c) => {
@@ -60,12 +71,15 @@ export function dashboardRoutes(getStore: (env: Env) => Store) {
     const resumed = !Number.isNaN(stored.getTime());
     const cutoff = resumed ? stored : person.dashboardSeenAt ?? new Date(now.getTime() - FIRST_VISIT_MS);
     const q = (c.req.query('q') ?? '').trim();
+    const area = c.req.query('area') ?? '';
     // Sequential: each read takes a pooled connection, and the Worker has few.
     // shortcut: loads every change since the cutoff (shows 50); cap it if absences get long
     const changes = await store.changesSince(cutoff, person.id);
-    const results = q ? await store.search(q, { limit: 20 }) : null;
+    // An area alone lists that area's entries (search with an empty query).
+    const results = q || area ? await store.search(q, { area: area || undefined, limit: 20 }) : null;
     const timeline = await store.listEntries({ type: 'decision', limit: 20 });
-    const page = await homePage({ person, people: c.get('people'), changes, q, results, timeline });
+    const areas = await store.listAreas();
+    const page = await homePage({ ...viewer(c), changes, q, area, areas, results, timeline });
     // Only after every read succeeded: a failed load must not lose the old cutoff.
     if (!resumed) await store.touchDashboardSeen(person.id, now);
     setCookie(c, 'sp_visit', cutoff.toISOString(), { httpOnly: true, path: '/dashboard', maxAge: VISIT_TTL_S });
@@ -97,7 +111,7 @@ export function dashboardRoutes(getStore: (env: Env) => Store) {
     } else if (entry.type === 'proposal' && entry.targetId) {
       target = await store.getEntry(entry.targetId);
     }
-    return c.html(await entryPage({ person: c.get('person'), people: c.get('people'), entry, target, history }));
+    return c.html(await entryPage({ ...viewer(c), entry, target, history }));
   });
 
   app.get('/proposals', async (c) => {
@@ -107,7 +121,7 @@ export function dashboardRoutes(getStore: (env: Env) => Store) {
     // One read for all targets; a deleted target is absent from the result.
     const targets = new Map((ids.length ? await store.listEntries({ ids, limit: ids.length }) : []).map((e) => [e.id, e]));
     const items = proposals.map((proposal) => ({ proposal, target: targets.get(proposal.targetId ?? '') ?? null }));
-    return c.html(await proposalsPage({ person: c.get('person'), people: c.get('people'), items }));
+    return c.html(await proposalsPage({ ...viewer(c), items }));
   });
 
   app.post('/proposals/:id/:action{accept|reject}', async (c) => {
@@ -132,7 +146,7 @@ export function dashboardRoutes(getStore: (env: Env) => Store) {
     // shortcut: last 100 only, fine for a small team; paginate if it grows
     const views = await store.listEntries({ type: 'view', limit: 100 });
     const decisions = await store.listEntries({ type: 'decision', limit: 100 });
-    return c.html(await viewsPage({ person: c.get('person'), people: c.get('people'), views, decisions }));
+    return c.html(await viewsPage({ ...viewer(c), views, decisions }));
   });
 
   app.get('/team', async (c) => {
@@ -141,7 +155,7 @@ export function dashboardRoutes(getStore: (env: Env) => Store) {
     const workstreams = await store.listEntries({ type: 'workstream', limit: 100 });
     const updates = await store.listEntries({ type: 'update', limit: 100 });
     const recent = await store.listEntries({ limit: 100 });
-    return c.html(await teamPage({ person: c.get('person'), people: c.get('people'), workstreams, updates, recent }));
+    return c.html(await teamPage({ ...viewer(c), workstreams, updates, recent }));
   });
 
   app.get('/workstreams/:id', async (c) => {
@@ -153,7 +167,7 @@ export function dashboardRoutes(getStore: (env: Env) => Store) {
     const updates = await store.listEntries({ type: 'update', workstreamId: id, limit: 100 });
     const all = await store.listEntries({ type: 'workstream', limit: 100 });
     const others = all.filter((w) => w.id !== id && w.status !== 'done');
-    return c.html(await workstreamPage({ person: c.get('person'), people: c.get('people'), workstream, updates, others }));
+    return c.html(await workstreamPage({ ...viewer(c), workstream, updates, others }));
   });
 
   app.post('/workstreams/:id/:action{rename|status|merge}', async (c) => {

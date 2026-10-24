@@ -21,6 +21,7 @@ export interface Store {
   getEntry(id: string, opts?: { forUpdate?: boolean }): Promise<Entry | null>;
   listEntries(f: EntryFilter): Promise<Entry[]>;                 // excludes deleted, newest first, limit default 20
   search(q: string, f: { area?: string; limit?: number }): Promise<Entry[]>; // excludes deleted
+  listAreas(): Promise<string[]>;                                // distinct areas of non-deleted entries, sorted
   changesSince(since: Date, excludePersonId: string): Promise<Change[]>;
   insertEntry(e: NewEntry): Promise<Entry>;
   updateEntry(id: string, patch: EntryPatch, by: string): Promise<Entry>; // sets updatedAt=now, updatedBy=by

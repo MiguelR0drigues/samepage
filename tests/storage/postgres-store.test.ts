@@ -162,6 +162,15 @@ describe('PostgresStore', () => {
     expect(await store.listEntries({ ids: [] })).toEqual([]);
   });
 
+  it('listAreas returns the distinct areas of live entries, sorted', async () => {
+    await store.insertEntry(base({ area: 'pricing' }));
+    await store.insertEntry(base({ area: 'infra' }));
+    await store.insertEntry(base({ area: 'pricing' }));
+    const gone = await store.insertEntry(base({ area: 'legal' }));
+    await store.updateEntry(gone.id, { deletedAt: new Date(), deletedBy: 'miguel' }, 'miguel');
+    expect(await store.listAreas()).toEqual(['infra', 'pricing']);
+  });
+
   it('moveUpdates reassigns updates without touching updatedAt', async () => {
     const a = await store.insertEntry(base({ type: 'workstream', status: 'in_progress', title: 'A' }));
     const b = await store.insertEntry(base({ type: 'workstream', status: 'in_progress', title: 'B' }));

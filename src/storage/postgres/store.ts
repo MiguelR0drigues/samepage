@@ -96,6 +96,12 @@ export class PostgresStore implements Store {
     return this.withAuthors(rows);
   }
 
+  async listAreas() {
+    const rows = await this.db.selectDistinct({ area: entries.area }).from(entries)
+      .where(isNull(entries.deletedAt)).orderBy(asc(entries.area));
+    return rows.map((r) => r.area);
+  }
+
   async search(q: string, f: { area?: string; limit?: number }) {
     if (q.trim() === '') return this.listEntries({ area: f.area, limit: f.limit });
     // shortcut: 'simple' config with no stemming or index; switch to a GIN index/embeddings if search misses or gets slow

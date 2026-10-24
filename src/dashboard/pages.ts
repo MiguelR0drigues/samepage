@@ -1,6 +1,6 @@
 import { html } from 'hono/html';
 import type { Change, Entry, EntryStatus, Person } from '../domain/types';
-import { day, entryHref, layout, nameOf, pill } from './html';
+import { day, entryHref, layout, nameOf, pill, type Viewer } from './html';
 
 const SHOWN = 50;
 const KIND_TONE = { new: 'ok', changed: 'acc', removed: 'mut' } as const;
@@ -17,10 +17,12 @@ const changeRow = (people: Person[], { kind, entry: e }: Change) => {
   return html`<div class="row">${pill(kind, KIND_TONE[kind])} ${what}</div>`;
 };
 
-export const homePage = (d: { person: Person; people: Person[]; changes: Change[]; q: string; results: Entry[] | null; timeline: Entry[] }) =>
-  layout({ title: 'Home', active: 'home', person: d.person, body: html`
+export const homePage = (d: Viewer & { changes: Change[]; q: string; area: string; areas: string[]; results: Entry[] | null; timeline: Entry[] }) =>
+  layout({ title: 'Home', active: 'home', viewer: d, body: html`
 <form class="search" action="/dashboard" method="get">
-<input name="q" value="${d.q}" placeholder="Search decisions, views, principles"><button>Search</button></form>
+<input name="q" value="${d.q}" aria-label="Search" placeholder="Search decisions, views, principles">
+<select name="area" aria-label="Area"><option value="">All areas</option>
+${d.areas.map((a) => html`<option value="${a}" ${a === d.area ? 'selected' : ''}>${a}</option>`)}</select><button>Search</button></form>
 ${d.results && html`<div class="t">Search results</div>
 ${d.results.length ? d.results.map((e) => html`<div class="row"><a href="${entryHref(e)}">${e.title}</a>
 <span class="mut">· ${e.type} · ${e.area}</span></div>`) : html`<p class="mut">No results.</p>`}`}
@@ -46,8 +48,8 @@ ${p.status !== 'open' ? html`<p>${statusPill(p)} ${p.resolutionNote && html`<spa
   : html`<div><form class="inl" method="post" action="/dashboard/proposals/${p.id}/accept"><button>Accept</button></form>
 <form class="inl" method="post" action="/dashboard/proposals/${p.id}/reject"><input name="reason" aria-label="Reason" placeholder="Reason (optional)"><button>Reject</button></form></div>`}</div>`;
 
-export const proposalsPage = (d: { person: Person; people: Person[]; items: { proposal: Entry; target: Entry | null }[] }) =>
-  layout({ title: 'Proposals', active: 'proposals', person: d.person, body: html`
+export const proposalsPage = (d: Viewer & { items: { proposal: Entry; target: Entry | null }[] }) =>
+  layout({ title: 'Proposals', active: 'proposals', viewer: d, body: html`
 <div class="t">Open proposals</div>
 ${d.items.length ? d.items.map((i) => proposalCard(d.person, d.people, i.proposal, i.target)) : html`<p class="mut">No open proposals.</p>`}` });
 
@@ -73,19 +75,19 @@ const otherBody = (people: Person[], e: Entry) => html`
 <p class="mut">by ${names(people, e.authors)} · ${day(e.createdAt)}</p>
 ${e.workstreamId && html`<p><a href="/dashboard/workstreams/${e.workstreamId}">Workstream</a></p>`}`;
 
-export const entryPage = (d: { person: Person; people: Person[]; entry: Entry; target: Entry | null; history: History }) => {
+export const entryPage = (d: Viewer & { entry: Entry; target: Entry | null; history: History }) => {
   const e = d.entry;
   const body = e.type === 'decision' ? decisionBody(d.people, e, d.history)
     : e.type === 'proposal' ? proposalCard(d.person, d.people, e, d.target)
     : otherBody(d.people, e);
-  return layout({ title: e.title, active: e.type === 'proposal' ? 'proposals' : null, person: d.person, body });
+  return layout({ title: e.title, active: e.type === 'proposal' ? 'proposals' : null, viewer: d, body });
 };
 
-export const viewsPage = (d: { person: Person; people: Person[]; views: Entry[]; decisions: Entry[] }) => {
+export const viewsPage = (d: Viewer & { views: Entry[]; decisions: Entry[] }) => {
   const humans = d.people.filter((p) => !p.isSystem);
   const live = d.decisions.filter((e) => e.status === 'active' || e.status === 'under_review');
   const areas = [...new Set(d.views.map((v) => v.area))].sort();
-  return layout({ title: 'Who thinks what', active: 'views', person: d.person, body: html`
+  return layout({ title: 'Who thinks what', active: 'views', viewer: d, body: html`
 ${areas.length ? areas.map((area) => {
     const current = live.filter((e) => e.area === area);
     return html`<h2>${area}</h2>
@@ -101,12 +103,12 @@ ${current.length ? html`<div class="t">Current decisions</div>${current.map((e) 
 
 const wsLink = (w: Entry) => html`<a href="${entryHref(w)}">${w.title}</a>`;
 
-export const teamPage = (d: { person: Person; people: Person[]; workstreams: Entry[]; updates: Entry[]; recent: Entry[] }) => {
+export const teamPage = (d: Viewer & { workstreams: Entry[]; updates: Entry[]; recent: Entry[] }) => {
   const byId = new Map(d.workstreams.map((w) => [w.id, w]));
   // Updates are newest first, so the first one found is the latest; progress updates never touch the workstream's own updatedAt.
   const wsRow = (w: Entry) => html`<div class="row">${wsLink(w)} ${statusPill(w)}
 <span class="mut">· ${day(d.updates.find((u) => u.workstreamId === w.id)?.createdAt ?? w.createdAt)}</span></div>`;
-  return layout({ title: 'Team', active: 'team', person: d.person, body: html`${d.people.filter((p) => !p.isSystem).map((p) => {
+  return layout({ title: 'Team', active: 'team', viewer: d, body: html`${d.people.filter((p) => !p.isSystem).map((p) => {
     const own = (e: Entry) => e.recordedBy === p.id || e.authors.includes(p.id);
     const mine = d.workstreams.filter(own);
     const open = mine.filter((w) => w.status !== 'done');
@@ -124,10 +126,10 @@ ${done.length ? html`<details><summary>Done (${done.length})</summary>${done.map
   })}` });
 };
 
-export const workstreamPage = (d: { person: Person; people: Person[]; workstream: Entry; updates: Entry[]; others: Entry[] }) => {
+export const workstreamPage = (d: Viewer & { workstream: Entry; updates: Entry[]; others: Entry[] }) => {
   const w = d.workstream;
   const act = `/dashboard/workstreams/${w.id}`;
-  return layout({ title: w.title, active: 'team', person: d.person, body: html`
+  return layout({ title: w.title, active: 'team', viewer: d, body: html`
 <h2>${w.title}</h2>
 <p>${statusPill(w)}</p>
 <div class="pre">${w.content}</div>

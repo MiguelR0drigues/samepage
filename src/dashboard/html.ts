@@ -23,6 +23,7 @@ input,select,button{font:inherit;color:var(--tx);background:var(--card);border:1
 .pre{white-space:pre-wrap}
 .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px}.cols .row{margin:0}
 form.inl{display:inline-flex;gap:8px;margin:0 8px 0 0}
+.nav .me form{margin:4px 0 0}.nav button.out{border:0;background:none;padding:0;color:var(--mut);text-decoration:underline;cursor:pointer}
 @media (max-width:640px){.sp{grid-template-columns:1fr}.nav{flex-direction:row;flex-wrap:wrap;align-items:center}.nav .brand{padding:4px 12px}.nav .me{margin:0 0 0 auto;padding:0 12px}}
 `;
 
@@ -33,12 +34,17 @@ const head = (title: string) => html`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${title}</title><style>${raw(CSS)}</style></head>`;
 
-export const layout = (o: { title: string; active: 'home' | 'proposals' | 'views' | 'team' | null; person: Person; body: unknown }) =>
+// Who is looking, plus what the nav needs on every page.
+export type Viewer = { person: Person; people: Person[]; openProposals: number };
+
+export const layout = (o: { title: string; active: 'home' | 'proposals' | 'views' | 'team' | null; viewer: Viewer; body: unknown }) =>
   html`${head(`${o.title} · SamePage`)}
 <body><div class="sp">
 <nav class="nav"><div class="brand">SamePage</div>
-${NAV.map(([key, href, label]) => html`<a href="${href}" class="${key === o.active ? 'on' : ''}">${label}</a>`)}
-<div class="me">${o.person.name}</div></nav>
+${NAV.map(([key, href, label]) => html`<a href="${href}" class="${key === o.active ? 'on' : ''}">${label}${
+  key === 'proposals' && o.viewer.openProposals ? html` <span class="pill warn">${o.viewer.openProposals}</span>` : ''}</a>`)}
+<div class="me">${o.viewer.person.name}
+<form method="post" action="/dashboard/logout"><button class="out">Sign out</button></form></div></nav>
 <main class="main">${o.body}</main>
 </div></body></html>`;
 

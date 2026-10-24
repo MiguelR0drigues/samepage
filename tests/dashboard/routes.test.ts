@@ -158,6 +158,42 @@ describe('Home', () => {
     expect(home).not.toContain('Search results');
     expect(home).toMatch(/Timeline[\s\S]*Per-seat pricing[\s\S]*active/);
   });
+
+  it('filters search by area, with or without words', async () => {
+    const m = new Memory(store);
+    await m.record(joao, decision('Per-seat pricing'));
+    await m.record(joao, { ...decision('Use Neon pricing tier'), area: 'infra' });
+    const session = await signIn(app, store, 'miguel');
+    const home = await (await get(app, '/dashboard', session)).text();
+    expect(home).toContain('<option value="infra"');
+    expect(home).toContain('<option value="pricing"');
+    const infra = await (await get(app, '/dashboard?area=infra', session)).text();
+    expect(infra).toMatch(/Search results[\s\S]*Use Neon pricing tier[\s\S]*What's new/);
+    expect(infra.split("What's new")[0]).not.toContain('Per-seat pricing');
+    expect(infra).toContain('<option value="infra" selected');
+    const both = await (await get(app, '/dashboard?q=pricing&area=pricing', session)).text();
+    expect(both.split("What's new")[0]).toContain('Per-seat pricing');
+    expect(both.split("What's new")[0]).not.toContain('Use Neon pricing tier');
+  });
+});
+
+describe('nav', () => {
+  it('shows how many proposals are open', async () => {
+    const session = await signIn(app, store, 'miguel');
+    expect(await (await get(app, '/dashboard/team', session)).text()).not.toContain('Proposals <span class="pill');
+    const a = await new Memory(store).record(miguel, { ...decision('Per-seat pricing'), authors: ['miguel', 'joao'] });
+    await new Memory(store).proposeRevision(joao, a.id, { title: 'Per-use pricing', content: 'Switch.', justification: 'y' });
+    expect(await (await get(app, '/dashboard/team', session)).text()).toContain('Proposals <span class="pill warn">1</span>');
+  });
+
+  it('sign out clears the session cookie', async () => {
+    const session = await signIn(app, store, 'miguel');
+    expect(await (await get(app, '/dashboard', session)).text()).toContain('Sign out');
+    const res = await post(app, '/dashboard/logout', session, {});
+    expect(res.status).toBe(303);
+    expect(res.headers.get('location')).toBe('/dashboard');
+    expect(res.headers.get('set-cookie')).toMatch(/sp_session=;.*Max-Age=0/);
+  });
 });
 
 const both = { authors: ['miguel', 'joao'] };
@@ -366,7 +402,7 @@ describe('Team', () => {
     const [withUpdate, bare] = [await m.record(miguel, ws('Has update')), await m.record(miguel, ws('Bare'))];
     const u = await m.record(miguel, { type: 'update', title: 'step', content: 'c', area: 'gtm', workstreamId: withUpdate.id });
     const page = await teamPage({
-      person: miguel, people: [miguel], recent: [],
+      person: miguel, people: [miguel], openProposals: 0, recent: [],
       workstreams: [{ ...withUpdate, createdAt: new Date('2026-01-01'), updatedAt: new Date('2026-01-02') },
         { ...bare, createdAt: new Date('2026-02-01'), updatedAt: new Date('2026-02-09') }],
       updates: [{ ...u, createdAt: new Date('2026-03-05') }],
