@@ -31,17 +31,25 @@ A small team's daily use is far below these limits. The 10 ms CPU limit is the o
 
 ## Deploy (one time, done by the person who owns the hosting)
 
-1. Create a Neon project and copy the **pooled** connection string (host contains `-pooler`).
-2. Apply the schema: `DATABASE_URL="<pooled string>" npm run db:migrate`
-3. Create each team member and the system person:
-   - `DATABASE_URL="<pooled string>" npm run person:add -- miguel "Miguel"`
-   - `DATABASE_URL="<pooled string>" npm run person:add -- meet "Meet" --system`
-   
-   Each command prints a token once. Give each person theirs through a private channel.
+Commands are shown for bash and for PowerShell. In PowerShell use `curl.exe` (plain `curl` is an alias for `Invoke-WebRequest`), and set `$env:DATABASE_URL` once per terminal.
+
+1. Create a Neon project and copy two connection strings:
+   - the **pooled** one (host contains `-pooler`) for the Worker secret;
+   - the **direct** (non-pooler) one for `db:migrate` and the `person:add` / `db:export` scripts, since migrations and one-off scripts work better without the pooler.
+2. Apply the schema:
+   - bash: `DATABASE_URL="<direct string>" npm run db:migrate`
+   - PowerShell: `$env:DATABASE_URL="<direct string>"; npm run db:migrate`
+3. Create each team member and the system person (same `DATABASE_URL` as above; in PowerShell it stays set for the session):
+   - `npm run person:add -- miguel "Miguel"`
+   - `npm run person:add -- meet "Meet" --system`
+
+   Prefix each with `DATABASE_URL="<direct string>"` in bash. Each command prints a token once. Give each person theirs through a private channel.
 4. Log in and set the secret: `npx wrangler login`, then `npx wrangler secret put DATABASE_URL` (paste the pooled string).
 5. Deploy: `npm run deploy`. Wrangler prints the Worker URL (`https://samepage.<account>.workers.dev`). That is the `SAMEPAGE_URL`.
 6. Check it:
-   - `curl https://<worker>/health` returns `ok`
-   - `curl -H "Authorization: Bearer <token>" https://<worker>/summary` returns the summary header
+   - `curl https://<worker>/health` returns `ok` (PowerShell: `curl.exe https://<worker>/health`)
+   - `curl -H "Authorization: Bearer <token>" https://<worker>/summary` returns the summary header (PowerShell: `curl.exe -H "Authorization: Bearer <token>" https://<worker>/summary`)
+
+On Windows, Claude Code runs hooks under Git Bash, so the session-start hook command works there as written.
 
 `npm run db:export` files contain the token hashes, so store them privately.
