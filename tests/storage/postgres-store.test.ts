@@ -111,12 +111,64 @@ describe('PostgresStore', () => {
     const w = await store.insertEntry(base({ type: 'workstream', status: 'in_progress' }));
     await store.insertEntry(base({ type: 'update', workstreamId: w.id }));
     await store.touchLastSeen('joao', new Date());
+    await store.touchDashboardSeen('joao', new Date());
+    await store.setDashboardNonce('miguel', 'n1');
     const snap = await store.exportAll();
     const fresh = new PostgresStore(await createTestDb());
     await fresh.importAll(snap);
     expect(await fresh.exportAll()).toEqual(snap);
     expect(snap.entries.find((e) => e.type === 'update')?.workstreamId).toBe(w.id);
     await expect(store.importAll(snap)).rejects.toThrow();
+  });
+
+  it('touchDashboardSeen sets dashboardSeenAt and leaves lastSeenAt alone', async () => {
+    const t = new Date('2026-01-01T10:00:00Z');
+    await store.touchDashboardSeen('miguel', t);
+    let p = (await store.listPeople()).find((x) => x.id === 'miguel')!;
+    expect(p.dashboardSeenAt).toEqual(t);
+    expect(p.lastSeenAt).toBeNull();
+    await store.touchLastSeen('miguel', new Date());
+    p = (await store.listPeople()).find((x) => x.id === 'miguel')!;
+    expect(p.dashboardSeenAt).toEqual(t);
+  });
+
+  it('a dashboard nonce is consumed once', async () => {
+    await store.setDashboardNonce('miguel', 'n1');
+    expect(await store.consumeDashboardNonce('miguel', 'other')).toBe(false);
+    expect(await store.consumeDashboardNonce('joao', 'n1')).toBe(false);
+    expect(await store.consumeDashboardNonce('miguel', 'n1')).toBe(true);
+    expect(await store.consumeDashboardNonce('miguel', 'n1')).toBe(false);
+    for (const p of await store.listPeople()) expect(p).not.toHaveProperty('dashboardNonce');
+  });
+
+  it('listEntries filters by workstreamId, supersedesId and targetId', async () => {
+    const w = await store.insertEntry(base({ type: 'workstream', status: 'in_progress' }));
+    const target = await store.insertEntry(base({ title: 'target' }));
+    const u = await store.insertEntry(base({ type: 'update', title: 'u', workstreamId: w.id }));
+    const s = await store.insertEntry(base({ title: 's', supersedesId: target.id }));
+    const t = await store.insertEntry(base({ type: 'proposal', title: 't', targetId: target.id }));
+    expect((await store.listEntries({ workstreamId: w.id })).map((e) => e.id)).toEqual([u.id]);
+    expect((await store.listEntries({ supersedesId: target.id })).map((e) => e.id)).toEqual([s.id]);
+    expect((await store.listEntries({ targetId: target.id })).map((e) => e.id)).toEqual([t.id]);
+  });
+
+  it('moveUpdates reassigns updates without touching updatedAt', async () => {
+    const a = await store.insertEntry(base({ type: 'workstream', status: 'in_progress', title: 'A' }));
+    const b = await store.insertEntry(base({ type: 'workstream', status: 'in_progress', title: 'B' }));
+    const u1 = await store.insertEntry(base({ type: 'update', title: 'u1', workstreamId: a.id }));
+    const u2 = await store.insertEntry(base({ type: 'update', title: 'u2', workstreamId: a.id }));
+    await store.insertEntry(base({ type: 'update', title: 'u3', workstreamId: b.id }));
+    await sleep();
+    const beforeMove = new Date();
+    await sleep();
+    expect(await store.moveUpdates(a.id, b.id)).toBe(2);
+    for (const u of [u1, u2]) {
+      const got = (await store.getEntry(u.id))!;
+      expect(got.workstreamId).toBe(b.id);
+      expect(got.updatedAt).toEqual(u.updatedAt);
+      expect(got.updatedBy).toBe(u.updatedBy);
+    }
+    expect(await store.changesSince(beforeMove, 'joao')).toEqual([]);
   });
 
   it('getEntry with forUpdate runs inside a transaction and returns the entry', async () => {
