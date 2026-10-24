@@ -180,6 +180,7 @@ Decisões tomadas por WhatsApp ou presencialmente entram pelo registo explícito
    - `update`: o que foi feito e o próximo passo, com autor e área, ligado a uma frente de trabalho;
    - `workstream`: uma frente de trabalho, com estado `in_progress`, `blocked` ou `done`.
 1.5. **Dashboard web** (depois de o núcleo estar em produção), servido pelo mesmo Worker.
+   - **Princípio:** o dashboard é complementar, nunca obrigatório. Nada pode depender de alguém ir vê-lo: quando é preciso uma decisão ou confirmação (pendentes, propostas, conflitos), o agente pergunta diretamente ao utilizador na conversa. Tudo o que se faz no dashboard tem de ser possível pelo agente.
    - **Só de leitura.** As exceções são aceitar e rejeitar propostas, e renomear, juntar ou fechar frentes de trabalho.
    - **Ecrãs:**
      - Início: novidades desde a última visita, pesquisa e linha do tempo;
