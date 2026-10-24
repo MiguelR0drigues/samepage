@@ -9,7 +9,7 @@ const base = (over: Partial<NewEntry> = {}): NewEntry => ({
   type: 'decision', status: 'active', title: 'Title', content: 'Content', question: null,
   positions: null, consensus: null, consensusReason: null, area: 'general', sourceKind: 'explicit',
   sourceRef: null, authors: ['miguel'], recordedBy: 'miguel', supersedesId: null, targetId: null,
-  resolutionNote: null, ...over,
+  resolutionNote: null, workstreamId: null, ...over,
 });
 
 async function setup() {
@@ -108,11 +108,14 @@ describe('PostgresStore', () => {
   it('exportAll and importAll round-trip', async () => {
     const a = await store.insertEntry(base({ authors: ['miguel', 'joao'] }));
     await store.insertEntry(base({ title: 'b', supersedesId: a.id, positions: [{ person: 'joao', position: 'x' }] }));
+    const w = await store.insertEntry(base({ type: 'workstream', status: 'in_progress' }));
+    await store.insertEntry(base({ type: 'update', workstreamId: w.id }));
     await store.touchLastSeen('joao', new Date());
     const snap = await store.exportAll();
     const fresh = new PostgresStore(await createTestDb());
     await fresh.importAll(snap);
     expect(await fresh.exportAll()).toEqual(snap);
+    expect(snap.entries.find((e) => e.type === 'update')?.workstreamId).toBe(w.id);
     await expect(store.importAll(snap)).rejects.toThrow();
   });
 

@@ -242,3 +242,54 @@ describe('proposals', () => {
     await expect(memory.rejectProposal(meet, proposal.id)).rejects.toBeInstanceOf(MemoryError);
   });
 });
+
+describe('progress tracking', () => {
+  const workstream = (over: Partial<RecordInput> = {}): RecordInput => ({
+    type: 'workstream', title: 'Launch site', content: 'Ship the landing page.', area: 'marketing', ...over,
+  });
+  const update = (workstreamId?: string): RecordInput => ({
+    type: 'update', title: 'Hero done', content: 'Hero section merged.', area: 'marketing', workstreamId,
+  });
+
+  it('records a workstream as in_progress and an update linked to it', async () => {
+    const w = await memory.record(miguel, workstream());
+    expect(w.status).toBe('in_progress');
+    const u = await memory.record(joao, update(w.id));
+    expect(u.status).toBe('active');
+    expect(u.workstreamId).toBe(w.id);
+  });
+
+  it('rejects an update without, with a bogus, a deleted or a non-workstream target', async () => {
+    const w = await memory.record(miguel, workstream());
+    const d = await memory.record(miguel, decision());
+    await memory.remove(miguel, w.id);
+    for (const id of [undefined, '00000000-0000-0000-0000-000000000000', w.id, d.id]) {
+      const err = await memory.record(miguel, update(id)).catch((e) => e);
+      expect(err).toBeInstanceOf(MemoryError);
+      expect(err.message).toContain('An update needs an existing workstream');
+    }
+    expect(await store.listEntries({ type: 'update' })).toEqual([]);
+  });
+
+  it('rejects workstreamId on other types', async () => {
+    const w = await memory.record(miguel, workstream());
+    await expect(memory.record(miguel, decision({ workstreamId: w.id }))).rejects.toThrow('Only updates can link to a workstream.');
+    await expect(memory.record(miguel, workstream({ workstreamId: w.id }))).rejects.toThrow('Only updates can link to a workstream.');
+  });
+
+  it('any human can set the workstream status; a system actor cannot', async () => {
+    const w = await memory.record(miguel, workstream());
+    expect((await memory.setWorkstreamStatus(joao, w.id, 'blocked')).status).toBe('blocked');
+    expect((await memory.setWorkstreamStatus(joao, w.id, 'done')).status).toBe('done');
+    await expect(memory.setWorkstreamStatus(meet, w.id, 'blocked')).rejects.toBeInstanceOf(MemoryError);
+    expect((await store.getEntry(w.id))?.status).toBe('done');
+  });
+
+  it('setWorkstreamStatus only targets live workstreams', async () => {
+    const d = await memory.record(miguel, decision());
+    await expect(memory.setWorkstreamStatus(miguel, d.id, 'done')).rejects.toBeInstanceOf(MemoryError);
+    const w = await memory.record(miguel, workstream());
+    await memory.remove(miguel, w.id);
+    await expect(memory.setWorkstreamStatus(miguel, w.id, 'done')).rejects.toBeInstanceOf(MemoryError);
+  });
+});

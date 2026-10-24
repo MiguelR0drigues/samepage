@@ -16,7 +16,7 @@ const limit = z.number().int().min(1).max(20).default(5).describe('Max results (
 const id = z.string().describe('Entry id');
 
 const recordFields = {
-  type: z.enum(['decision', 'view', 'principle', 'exploration']),
+  type: z.enum(['decision', 'view', 'principle', 'exploration', 'update', 'workstream']),
   title: z.string(),
   content: z.string(),
   area: z.string(),
@@ -27,13 +27,14 @@ const recordFields = {
   consensus_reason: z.string().optional(),
   source: z.enum(['meet', 'claude_code', 'explicit']).optional(),
   source_ref: z.string().optional(),
+  workstream_id: z.string().optional().describe('Required for type update: the workstream it belongs to; see list_workstreams'),
 };
 type RecordArgs = z.infer<z.ZodObject<typeof recordFields>>;
 
 const toRecordInput = (a: RecordArgs): RecordInput => ({
   type: a.type, title: a.title, content: a.content, area: a.area, authors: a.authors, question: a.question,
   positions: a.positions, consensus: a.consensus, consensusReason: a.consensus_reason,
-  sourceKind: a.source, sourceRef: a.source_ref,
+  sourceKind: a.source, sourceRef: a.source_ref, workstreamId: a.workstream_id,
 });
 
 // Rule violations go back to the agent as tool errors; anything else is a real failure and propagates.
@@ -70,9 +71,22 @@ export function buildMcpServer(store: Store, actor: Person): McpServer {
     () => run(async () => (await store.listPeople()).filter((p) => !p.isSystem).map((p) => `${p.id}: ${p.name}`).join('\n')));
 
   server.registerTool('record', {
-    description: 'Record a decision, view, principle or exploration.',
+    description: 'Record a decision, view, principle, exploration, workstream (a tracked piece of work) or update (a progress note on a workstream).',
     inputSchema: z.object(recordFields),
   }, (a) => run(async () => `Recorded ${(await memory.record(actor, toRecordInput(a))).id}`));
+
+  server.registerTool('list_workstreams', {
+    description: 'List workstreams (tracked pieces of work), newest first.',
+    inputSchema: z.object({ status: z.enum(['in_progress', 'blocked', 'done']).optional(), limit }),
+  }, (a) => run(async () => list(await store.listEntries({ type: 'workstream', status: a.status, limit: a.limit }))));
+
+  server.registerTool('set_workstream_status', {
+    description: 'Set a workstream to in_progress, blocked or done. Any team member can.',
+    inputSchema: z.object({ id, status: z.enum(['in_progress', 'blocked', 'done']) }),
+  }, (a) => run(async () => {
+    await memory.setWorkstreamStatus(actor, a.id, a.status);
+    return `Workstream ${a.id} is ${a.status}`;
+  }));
 
   server.registerTool('correct_text', {
     description: 'Fix the text of an entry you authored. A decision verdict (content) cannot be edited.',

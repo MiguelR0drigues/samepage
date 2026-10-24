@@ -1,0 +1,2 @@
+ALTER TABLE "entries" ADD COLUMN "workstream_id" uuid;--> statement-breakpoint
+ALTER TABLE "entries" ADD CONSTRAINT "entries_workstream_id_entries_id_fk" FOREIGN KEY ("workstream_id") REFERENCES "public"."entries"("id") ON DELETE no action ON UPDATE no action;

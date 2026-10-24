@@ -6,7 +6,7 @@ export class MemoryError extends Error {}
 export interface RecordInput {
   type: Exclude<EntryType, 'proposal'>; title: string; content: string; area: string;
   authors?: string[]; question?: string; positions?: Position[]; consensus?: Consensus;
-  consensusReason?: string; sourceKind?: SourceKind; sourceRef?: string;
+  consensusReason?: string; sourceKind?: SourceKind; sourceRef?: string; workstreamId?: string;
 }
 
 type TextPatch = Partial<Pick<Entry, 'title' | 'question' | 'positions' | 'consensusReason' | 'content'>>;
@@ -50,12 +50,32 @@ export class Memory {
       question: input.question ?? null, positions: input.positions ?? null, consensus: input.consensus ?? null,
       consensusReason: input.consensusReason ?? null, sourceKind: input.sourceKind ?? 'explicit',
       sourceRef: input.sourceRef ?? null, authors, recordedBy: actor.id,
-      supersedesId: null, targetId: null, resolutionNote: null,
+      supersedesId: null, targetId: null, resolutionNote: null, workstreamId: null,
     };
   }
 
   async record(actor: Person, input: RecordInput): Promise<Entry> {
-    return this.store.insertEntry(this.toNewEntry(actor, input, await this.resolveAuthors(actor, input.authors)));
+    if (input.workstreamId && input.type !== 'update') throw new MemoryError('Only updates can link to a workstream.');
+    const next = this.toNewEntry(actor, input, await this.resolveAuthors(actor, input.authors));
+    if (input.type === 'workstream') return this.store.insertEntry({ ...next, status: 'in_progress' });
+    if (input.type !== 'update') return this.store.insertEntry(next);
+    // Lock the workstream so a concurrent delete cannot leave a dangling link.
+    return this.store.transaction(async (tx) => {
+      const w = input.workstreamId ? await tx.getEntry(input.workstreamId, { forUpdate: true }) : null;
+      if (w?.type !== 'workstream' || w.deletedAt) {
+        throw new MemoryError('An update needs an existing workstream: use list_workstreams or record a workstream first.');
+      }
+      return tx.insertEntry({ ...next, workstreamId: w.id });
+    });
+  }
+
+  async setWorkstreamStatus(actor: Person, id: string, status: 'in_progress' | 'blocked' | 'done'): Promise<Entry> {
+    assertHuman(actor);
+    return this.store.transaction(async (tx) => {
+      const w = await load(tx, id, { forUpdate: true });
+      if (w.type !== 'workstream') throw new MemoryError(`Entry not found: ${id}`);
+      return tx.updateEntry(id, { status }, actor.id);
+    });
   }
 
   async correctText(actor: Person, id: string, patch: TextPatch): Promise<Entry> {

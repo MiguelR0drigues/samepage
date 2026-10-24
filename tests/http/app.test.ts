@@ -57,11 +57,11 @@ describe('MCP transport', () => {
 });
 
 describe('MCP tools', () => {
-  it('lists the 10 tools', async () => {
+  it('lists the 12 tools', async () => {
     const { tools } = await (await connect('t-miguel')).listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
-      'accept_proposal', 'correct_text', 'delete_entry', 'list_decisions', 'list_team', 'propose_revision',
-      'record', 'reject_proposal', 'search_context', 'supersede_decision',
+      'accept_proposal', 'correct_text', 'delete_entry', 'list_decisions', 'list_team', 'list_workstreams',
+      'propose_revision', 'record', 'reject_proposal', 'search_context', 'set_workstream_status', 'supersede_decision',
     ]);
   });
 
@@ -84,6 +84,21 @@ describe('MCP tools', () => {
     await (await connect('t-joao')).callTool({ name: 'record', arguments: rec });
     const [e] = await store.listEntries({});
     expect(e!.recordedBy).toBe('joao');
+  });
+
+  it('tracks progress: record workstream and update, set status, list_workstreams', async () => {
+    const client = await connect('t-miguel');
+    const ws = { type: 'workstream', title: 'Launch site', content: 'Ship it.', area: 'marketing' };
+    const id = text(await client.callTool({ name: 'record', arguments: ws })).replace('Recorded ', '');
+    const up = await client.callTool({ name: 'record', arguments: { ...ws, type: 'update', title: 'Hero done', workstream_id: id } });
+    expect(up.isError).toBeFalsy();
+    expect(text(await client.callTool({ name: 'record', arguments: { ...ws, type: 'update' } }))).toContain('needs an existing workstream');
+    expect(text(await client.callTool({ name: 'set_workstream_status', arguments: { id, status: 'blocked' } }))).toBe(`Workstream ${id} is blocked`);
+    const listed = text(await client.callTool({ name: 'list_workstreams', arguments: {} }));
+    expect(listed).toContain('workstream (blocked): Launch site');
+    expect(listed).not.toContain('Hero done');
+    expect(text(await client.callTool({ name: 'list_workstreams', arguments: { status: 'done' } }))).toBe('No results.');
+    expect((await store.listEntries({ type: 'update' }))[0]!.workstreamId).toBe(id);
   });
 
   it('supersede_decision reports the outcome', async () => {
@@ -127,7 +142,7 @@ describe('proposal flow through MCP', () => {
     await store.insertEntry({
       type: 'decision', status: 'active', title: 'Use Neon', content: 'We use Neon.', area: 'infra', question: null, positions: null,
       consensus: null, consensusReason: null, sourceKind: 'explicit', sourceRef: null, authors: ['miguel', 'joao'],
-      recordedBy: 'miguel', supersedesId: null, targetId: null, resolutionNote: null,
+      recordedBy: 'miguel', supersedesId: null, targetId: null, resolutionNote: null, workstreamId: null,
     });
     const [decision] = await store.listEntries({ type: 'decision' });
     const created = text(await (await connect('t-joao')).callTool({

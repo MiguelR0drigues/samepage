@@ -27,6 +27,7 @@ export const entries = pgTable('entries', {
   supersedesId: uuid('supersedes_id').references((): AnyPgColumn => entries.id),
   targetId: uuid('target_id').references((): AnyPgColumn => entries.id),
   resolutionNote: text('resolution_note'),
+  workstreamId: uuid('workstream_id').references((): AnyPgColumn => entries.id),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),

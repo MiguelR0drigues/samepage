@@ -13,6 +13,7 @@ export function formatEntry(e: Entry): string {
   const links = [
     e.targetId && `revises: ${e.targetId}`,
     e.supersedesId && `supersedes: ${e.supersedesId}`,
+    e.workstreamId && `workstream: ${e.workstreamId}`,
     e.resolutionNote && `note: ${e.resolutionNote}`,
     e.sourceKind && `source: ${e.sourceKind}${e.sourceRef ? ` ${e.sourceRef}` : ''}`,
     !e.authors.includes(e.recordedBy) && `recorded by: ${e.recordedBy}`,
