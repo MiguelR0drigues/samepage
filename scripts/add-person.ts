@@ -3,8 +3,10 @@ import type { Store } from '../src/storage/store';
 import { sha256Hex } from '../src/http/app';
 import { isMain, runCli } from './db';
 
+export const newToken = () => randomBytes(32).toString('hex');
+
 export async function createPerson(store: Store, p: { id: string; name: string; isSystem: boolean }) {
-  const token = randomBytes(32).toString('hex');
+  const token = newToken();
   const person = await store.addPerson(p, await sha256Hex(token));
   return { person, token };
 }

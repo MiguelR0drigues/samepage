@@ -49,6 +49,11 @@ export class PostgresStore implements Store {
     await this.db.update(people).set({ lastSeenAt: at }).where(eq(people.id, personId));
   }
 
+  async setTokenHash(personId: string, tokenHash: string) {
+    const [row] = await this.db.update(people).set({ tokenHash }).where(eq(people.id, personId)).returning();
+    return row ? toPerson(row) : null;
+  }
+
   async getEntry(id: string, opts?: { forUpdate?: boolean }) {
     const q = this.db.select().from(entries).where(eq(entries.id, id));
     const [row] = await (opts?.forUpdate ? q.for('update') : q);
