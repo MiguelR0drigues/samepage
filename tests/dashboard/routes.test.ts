@@ -183,7 +183,7 @@ describe('nav', () => {
     expect(await (await get(app, '/dashboard/team', session)).text()).not.toContain('Proposals <span class="pill');
     const a = await new Memory(store).record(miguel, { ...decision('Per-seat pricing'), authors: ['miguel', 'joao'] });
     await new Memory(store).proposeRevision(joao, a.id, { title: 'Per-use pricing', content: 'Switch.', justification: 'y' });
-    expect(await (await get(app, '/dashboard/team', session)).text()).toContain('Proposals <span class="pill warn">1</span>');
+    expect(await (await get(app, '/dashboard/team', session)).text()).toContain('Proposals <span class="pill warn">1<span class="sr"> open</span></span>');
   });
 
   it('sign out clears the session cookie', async () => {
@@ -192,7 +192,13 @@ describe('nav', () => {
     const res = await post(app, '/dashboard/logout', session, {});
     expect(res.status).toBe(303);
     expect(res.headers.get('location')).toBe('/dashboard');
-    expect(res.headers.get('set-cookie')).toMatch(/sp_session=;.*Max-Age=0/);
+    const cleared = res.headers.getSetCookie();
+    for (const name of ['sp_session', 'sp_visit']) {
+      const c = cleared.find((s) => s.startsWith(`${name}=;`))!;
+      expect(c).toContain('Max-Age=0');
+      expect(c).toContain('Path=/dashboard');
+    }
+    expect(res.headers.get('cache-control')).toBe('no-store');
   });
 });
 

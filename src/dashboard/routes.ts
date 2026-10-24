@@ -29,6 +29,8 @@ export function dashboardRoutes(getStore: (env: Env) => Store) {
   app.use('*', async (c, next) => {
     await next();
     c.header('Referrer-Policy', 'no-referrer');
+    // Signed-in pages must not come back from the cache after Sign out (shared machines).
+    c.header('Cache-Control', 'no-store');
   });
 
   app.get('/login', async (c) => {
@@ -53,7 +55,7 @@ export function dashboardRoutes(getStore: (env: Env) => Store) {
     c.set('person', person);
     c.set('people', people);
     // For the nav badge on every page.
-    c.set('openProposals', (await store.listEntries({ type: 'proposal', status: 'open', limit: 50 })).length);
+    c.set('openProposals', await store.countEntries({ type: 'proposal', status: 'open' }));
     await next();
   });
 

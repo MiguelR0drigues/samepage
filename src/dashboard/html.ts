@@ -23,6 +23,7 @@ input,select,button{font:inherit;color:var(--tx);background:var(--card);border:1
 .pre{white-space:pre-wrap}
 .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px}.cols .row{margin:0}
 form.inl{display:inline-flex;gap:8px;margin:0 8px 0 0}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .nav .me form{margin:4px 0 0}.nav button.out{border:0;background:none;padding:0;color:var(--mut);text-decoration:underline;cursor:pointer}
 @media (max-width:640px){.sp{grid-template-columns:1fr}.nav{flex-direction:row;flex-wrap:wrap;align-items:center}.nav .brand{padding:4px 12px}.nav .me{margin:0 0 0 auto;padding:0 12px}}
 `;
@@ -42,7 +43,7 @@ export const layout = (o: { title: string; active: 'home' | 'proposals' | 'views
 <body><div class="sp">
 <nav class="nav"><div class="brand">SamePage</div>
 ${NAV.map(([key, href, label]) => html`<a href="${href}" class="${key === o.active ? 'on' : ''}">${label}${
-  key === 'proposals' && o.viewer.openProposals ? html` <span class="pill warn">${o.viewer.openProposals}</span>` : ''}</a>`)}
+  key === 'proposals' && o.viewer.openProposals ? html` <span class="pill warn">${o.viewer.openProposals}<span class="sr"> open</span></span>` : ''}</a>`)}
 <div class="me">${o.viewer.person.name}
 <form method="post" action="/dashboard/logout"><button class="out">Sign out</button></form></div></nav>
 <main class="main">${o.body}</main>

@@ -160,6 +160,7 @@ describe('PostgresStore', () => {
     expect((await store.listEntries({ ids: [a.id, c.id] })).map((e) => e.id)).toEqual([a.id]);
     expect((await store.listEntries({ ids: [a.id, b.id] })).map((e) => e.id).sort()).toEqual([a.id, b.id].sort());
     expect(await store.listEntries({ ids: [] })).toEqual([]);
+    expect(await store.countEntries({ ids: [a.id, b.id, c.id] })).toBe(2);
   });
 
   it('listAreas returns the distinct areas of live entries, sorted', async () => {

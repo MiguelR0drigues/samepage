@@ -80,20 +80,28 @@ export class PostgresStore implements Store {
     return row ? (await this.withAuthors([row]))[0]! : null;
   }
 
+  private filter(f: EntryFilter) {
+    return and(
+      isNull(entries.deletedAt),
+      f.type ? eq(entries.type, f.type) : undefined,
+      f.status ? eq(entries.status, f.status) : undefined,
+      f.area ? eq(entries.area, f.area) : undefined,
+      f.workstreamId ? eq(entries.workstreamId, f.workstreamId) : undefined,
+      f.supersedesId ? eq(entries.supersedesId, f.supersedesId) : undefined,
+      f.targetId ? eq(entries.targetId, f.targetId) : undefined,
+      f.ids ? inArray(entries.id, f.ids) : undefined,
+    );
+  }
+
   async listEntries(f: EntryFilter) {
-    const rows = await this.db.select().from(entries)
-      .where(and(
-        isNull(entries.deletedAt),
-        f.type ? eq(entries.type, f.type) : undefined,
-        f.status ? eq(entries.status, f.status) : undefined,
-        f.area ? eq(entries.area, f.area) : undefined,
-        f.workstreamId ? eq(entries.workstreamId, f.workstreamId) : undefined,
-        f.supersedesId ? eq(entries.supersedesId, f.supersedesId) : undefined,
-        f.targetId ? eq(entries.targetId, f.targetId) : undefined,
-        f.ids ? inArray(entries.id, f.ids) : undefined,
-      ))
+    const rows = await this.db.select().from(entries).where(this.filter(f))
       .orderBy(desc(entries.createdAt)).limit(f.limit ?? DEFAULT_LIMIT);
     return this.withAuthors(rows);
+  }
+
+  async countEntries(f: EntryFilter) {
+    const [row] = await this.db.select({ n: count() }).from(entries).where(this.filter(f));
+    return row!.n;
   }
 
   async listAreas() {
