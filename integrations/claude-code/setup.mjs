@@ -1,39 +1,49 @@
 #!/usr/bin/env node
 // samepage-setup <token>: connects Claude Code to SamePage and turns on session capture.
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import readline from 'node:readline/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { claudeDir, samepageHome } from './lib/paths.mjs';
+import { ask, askYesNo } from './lib/prompt.mjs';
 import { mergeHooks, removeHooks } from './lib/settings.mjs';
 import { readConfig, writeConfig } from './lib/state.mjs';
+import { runLogin } from './login.mjs';
 
 const DEFAULT_URL = 'https://samepage.scooli.workers.dev';
-const USAGE = 'Usage: samepage-setup <token> [--url <url>] [--folders "<a>;<b>"] [--claude-token <t>] [--uninstall]';
+const USAGE = 'Usage: samepage-setup <token> | --join <code> [--name "<name>"] [--same-person] [--url <url>] [--folders "<a>;<b>"] [--claude-token <t>] [--uninstall] | --login';
+const TAKEN = (/** @type {string} */ name) => `A member named ${name} already exists. If that is you (another computer), run again with --same-person. If not, run again with a different --name, e.g. "${name} (Marketing)".`;
 
 class Fail extends Error {}
 
 /**
  * @param {string[]} argv
- * @returns {{ help: boolean, uninstall: boolean, token: string | null, url: string, folders: string | null, claudeToken: string | null }}
+ * @returns {{ help: boolean, uninstall: boolean, token: string | null, url: string, folders: string | null, claudeToken: string | null, join: string | null, name: string | null, samePerson: boolean, login: boolean }}
  */
 export function parseArgs(argv) {
-  const out = { help: false, uninstall: false, token: /** @type {string | null} */ (null), url: DEFAULT_URL, folders: /** @type {string | null} */ (null), claudeToken: /** @type {string | null} */ (null) };
+  const out = {
+    help: false, uninstall: false, token: /** @type {string | null} */ (null), url: DEFAULT_URL, folders: /** @type {string | null} */ (null), claudeToken: /** @type {string | null} */ (null),
+    join: /** @type {string | null} */ (null), name: /** @type {string | null} */ (null), samePerson: false, login: false,
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--help' || a === '-h') out.help = true;
     else if (a === '--uninstall') out.uninstall = true;
-    else if (a === '--url' || a === '--folders' || a === '--claude-token') {
+    else if (a === '--same-person') out.samePerson = true;
+    else if (a === '--login') out.login = true;
+    else if (a === '--url' || a === '--folders' || a === '--claude-token' || a === '--join' || a === '--name') {
       const v = argv[++i];
       if (v === undefined) throw new Fail(`${a} needs a value.\n${USAGE}`);
       if (a === '--url') out.url = v.replace(/\/+$/, '');
       else if (a === '--folders') out.folders = v;
+      else if (a === '--join') out.join = v;
+      else if (a === '--name') out.name = v;
       else out.claudeToken = v;
     } else if (a.startsWith('-') || out.token) throw new Fail(`Unexpected argument: ${a}\n${USAGE}`);
     else out.token = a;
   }
+  if (out.token && out.join) throw new Fail('Use either a token or --join, not both.');
   return out;
 }
 
@@ -55,10 +65,16 @@ function which(name) {
   } catch { return []; }
 }
 
-/** @returns {string | null} */
-function findClaude() {
-  const lines = which('claude');
-  return (win && lines.find((l) => /\.(exe|cmd|bat)$/i.test(l))) || lines[0] || null;
+/**
+ * The claude binary: the one running this session (CLAUDE_CODE_EXECPATH, e.g. the desktop app's), else claude on PATH.
+ * @param {NodeJS.ProcessEnv} [env] @param {(name: string) => string[]} [lookup] @param {string} [platform]
+ * @returns {string | null}
+ */
+export function findClaude(env = process.env, lookup = which, platform = process.platform) {
+  const own = env.CLAUDE_CODE_EXECPATH;
+  if (own && /^claude/i.test(path.basename(own)) && fs.statSync(own, { throwIfNoEntry: false })?.isFile()) return own;
+  const lines = lookup('claude');
+  return (platform === 'win32' && lines.find((l) => /\.(exe|cmd|bat)$/i.test(l))) || lines[0] || null;
 }
 
 /**
@@ -86,52 +102,103 @@ export function parseFolders(answer, home = os.homedir()) {
   return folders;
 }
 
+/**
+ * The company folders offered as the default answer: the stored ones on a re-run, else the current folder.
+ * @param {string[]} stored @param {string} cwd
+ */
+export const defaultFolders = (stored, cwd) => (stored.length ? stored.join('; ') : cwd);
+
+/**
+ * The command that opens a terminal window running the login helper, or null where there is no way to.
+ * @param {string} platform @param {string} nodePath @param {string} loginPath
+ * @returns {{ cmd: string, args: string[] } | null}
+ */
+export function loginWindowCommand(platform, nodePath, loginPath) {
+  if (platform === 'win32') return { cmd: 'cmd.exe', args: ['/c', 'start', '"SamePage login"', `"${nodePath}"`, `"${loginPath}"`] };
+  if (platform === 'darwin') {
+    const sh = [nodePath, loginPath].map((p) => `'${p.replace(/'/g, String.raw`'\''`)}'`).join(' ');
+    return { cmd: 'osascript', args: ['-e', `tell application "Terminal" to do script "${sh.replace(/[\\"]/g, '\\$&')}"`] };
+  }
+  if (platform === 'linux') return { cmd: 'x-terminal-emulator', args: ['-e', nodePath, loginPath] };
+  return null;
+}
+
+/**
+ * The env for the login window: the session's, minus the CLAUDE_* and ANTHROPIC_* keys that change how `claude` behaves (like sanitizeEnv).
+ * @param {NodeJS.ProcessEnv} env
+ */
+export function loginWindowEnv(env) {
+  return Object.fromEntries(Object.entries(env).filter(([k]) => k === 'CLAUDE_CONFIG_DIR' || !/^(CLAUDE|ANTHROPIC_)/.test(k)));
+}
+
+/**
+ * Joins the team and returns the new token, or the existing member's name when it is taken.
+ * @param {string} url @param {string} code @param {string} name @param {boolean} existing @param {typeof fetch} [fetchFn]
+ * @returns {Promise<{ token: string, name: string } | { taken: string }>}
+ */
+export async function joinTeam(url, code, name, existing, fetchFn = fetch) {
+  let res;
+  try {
+    res = await fetchFn(`${url}/join`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code, name, existing }) });
+  } catch { throw new Fail(`Could not reach ${url}.`); }
+  const body = /** @type {any} */ (await res.json().catch(() => ({})));
+  if (res.status === 409) return { taken: body.name ?? name };
+  if (res.status !== 200 && res.status !== 201) throw new Fail(body.error ?? `Joining failed (${res.status}).`);
+  if (typeof body.token !== 'string') throw new Fail('The server did not return a token.');
+  return { token: body.token, name: body.name };
+}
+
+/** @param {string} url @param {string} token @param {typeof fetch} [fetchFn] */
+export async function tokenAccepted(url, token, fetchFn = fetch) {
+  try { return (await fetchFn(`${url}/summary`, { headers: { authorization: `Bearer ${token}` } })).status === 200; } catch { throw new Fail(`Could not reach ${url}.`); }
+}
+
 // A .cmd/.bat binary needs a shell, which joins the args as text: quote them. Errors never carry the command line (it holds tokens).
-function runClaude(/** @type {string} */ claude, /** @type {string[]} */ args, /** @type {import('node:child_process').ExecFileSyncOptions} */ opts = {}) {
+export function runClaude(/** @type {string} */ claude, /** @type {string[]} */ args, /** @type {import('node:child_process').ExecFileSyncOptions} */ opts = {}) {
   const shell = /\.(cmd|bat)$/i.test(claude);
   execFileSync(shell ? `"${claude}"` : claude, shell ? args.map((a) => `"${a}"`) : args, { stdio: 'ignore', windowsHide: true, ...opts, shell });
 }
 
-/** @param {string} prompt */
-async function askHidden(prompt) {
-  process.stdout.write(`${prompt} `);
-  const stdin = process.stdin;
-  if (!stdin.isTTY) {
-    const rl = readline.createInterface({ input: stdin });
-    const answer = await rl.question('');
-    rl.close();
-    return answer.trim();
+/** @param {ReturnType<typeof parseArgs>} args @returns {Promise<string>} */
+async function joinToken(args) {
+  const tty = !!process.stdin.isTTY;
+  let name = args.name ?? (tty ? await ask('Your name: ') : null);
+  if (!name) throw new Fail('--name is required when there is no terminal.');
+  let existing = args.samePerson;
+  for (;;) {
+    const r = await joinTeam(args.url, /** @type {string} */ (args.join), name, existing);
+    if ('token' in r) return r.token;
+    if (!tty) throw new Fail(TAKEN(r.taken));
+    if (await askYesNo(`A member named ${r.taken} already exists. Is that you? (y/n) `)) existing = true;
+    else for (name = ''; !name;) name = await ask('Your name: ');
   }
-  return new Promise((resolve) => {
-    let value = '';
-    stdin.setRawMode(true);
-    stdin.resume();
-    stdin.setEncoding('utf8');
-    const finish = () => { stdin.setRawMode(false); stdin.pause(); stdin.off('data', onData); process.stdout.write('\n'); };
-    const onData = (/** @type {string} */ chunk) => {
-      for (const ch of chunk) {
-        if (ch === '\r' || ch === '\n') { finish(); return resolve(value.trim()); }
-        if (ch === '\u0003') { finish(); process.exit(130); }
-        if (ch === '\u007f' || ch === '\b') value = value.slice(0, -1);
-        else if (ch >= ' ') value += ch;
-      }
-    };
-    stdin.on('data', onData);
-  });
 }
 
-/** @param {string} prompt */
-async function ask(prompt) {
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  const answer = await rl.question(prompt);
-  rl.close();
-  return answer.trim();
+// every top-level script: login.mjs runs from the home folder and imports setup.mjs
+function copyClient(/** @type {string} */ home) {
+  const src = path.dirname(fileURLToPath(import.meta.url));
+  for (const f of fs.readdirSync(src).filter((f) => f.endsWith('.mjs'))) fs.copyFileSync(path.join(src, f), path.join(home, f));
+  fs.cpSync(path.join(src, 'lib'), path.join(home, 'lib'), { recursive: true });
+  fs.writeFileSync(path.join(home, 'version'), JSON.parse(fs.readFileSync(path.join(src, 'package.json'), 'utf8')).version); // what update.mjs compares
+}
+
+/** Approves the Claude login: inline in a terminal, else in a new window the installer does not wait for. */
+async function login(/** @type {string} */ home, /** @type {string} */ claude, /** @type {string} */ url) {
+  if (process.stdin.isTTY) { await runLogin(home, claude); return; }
+  const w = loginWindowCommand(process.platform, findNode(), path.join(home, 'login.mjs'));
+  const opened = w && await new Promise((resolve) => {
+    const child = spawn(w.cmd, w.args, { detached: true, stdio: 'ignore', windowsVerbatimArguments: true, env: loginWindowEnv(process.env) });
+    child.once('error', () => resolve(false));
+    child.once('spawn', () => { child.unref(); resolve(true); });
+  });
+  console.log(opened
+    ? 'A window opened to approve your Claude login; capture turns on as soon as you approve.'
+    : `To turn on capture, run in a terminal: npx -y ${url}/samepage-setup.tgz --login`);
 }
 
 /** @param {ReturnType<typeof parseArgs>} args */
 async function install(args) {
   const { url } = args;
-  const token = /** @type {string} */ (args.token);
   const home = samepageHome();
   const settingsFile = path.join(claudeDir(), 'settings.json');
 
@@ -139,31 +206,24 @@ async function install(args) {
   const claude = findClaude();
   if (!claude) throw new Fail('Install Claude Code first: https://code.claude.com/docs');
 
-  let status;
-  try { status = (await fetch(`${url}/summary`, { headers: { authorization: `Bearer ${token}` } })).status; } catch { throw new Fail(`Could not reach ${url}.`); }
-  if (status !== 200) throw new Fail(`This token was rejected by ${url}.`);
-
-  let answer = args.folders;
-  while (answer === null) {
-    const a = await ask('Which folders hold company work? Capture runs only there (separate several with ;): ');
-    if (a || !process.stdin.isTTY) answer = a;
-  }
-  const folders = parseFolders(answer);
+  const previous = readConfig(home);
+  const fallback = defaultFolders(previous?.folders ?? [], process.cwd());
+  const folders = parseFolders(args.folders ?? (process.stdin.isTTY ? (await ask(`Which folders hold company work? Capture runs only there (separate several with ;) [${fallback}]: `)) || fallback : fallback));
 
   const settings = readJsonObject(settingsFile); // before anything is written
-  let claudeToken = args.claudeToken ?? readConfig(home)?.claudeToken ?? null;
-  if (!claudeToken) {
-    console.log('Capture uses your own Claude subscription. Claude will now create a long-lived token for it (setup-token):');
-    try { runClaude(claude, ['setup-token'], { stdio: 'inherit' }); } catch { /* it printed its own error; an empty answer below keeps capture off */ }
-    claudeToken = await askHidden('Paste the token it printed (starts with sk-ant-):') || null;
-    if (!claudeToken) console.warn('Capture stays off until you run setup again.');
-  }
+  let token = args.token;
+  if (token) {
+    if (!(await tokenAccepted(url, token))) throw new Fail(`This token was rejected by ${url}.`);
+  } else if (previous && await tokenAccepted(url, previous.token)) token = previous.token;
+  else if (args.join) token = await joinToken(args);
+  else throw new Fail(USAGE);
 
-  const src = path.dirname(fileURLToPath(import.meta.url));
+  // written before the steps that can fail, so a retry reuses this token instead of joining again
   fs.mkdirSync(home, { recursive: true });
-  for (const f of ['hook.mjs', 'extract.mjs']) fs.copyFileSync(path.join(src, f), path.join(home, f));
-  fs.cpSync(path.join(src, 'lib'), path.join(home, 'lib'), { recursive: true });
+  const claudeToken = args.claudeToken ?? previous?.claudeToken ?? null;
   writeConfig(home, { url, token, folders, claudePath: claude, claudeToken });
+  copyClient(home);
+  if (!claudeToken) await login(home, claude, url);
 
   const backup = `${settingsFile}.samepage-backup`;
   if (fs.existsSync(settingsFile) && !fs.existsSync(backup)) fs.copyFileSync(settingsFile, backup);
@@ -176,6 +236,15 @@ async function install(args) {
   } catch { throw new Fail('Could not register SamePage with Claude Code ("claude mcp add" failed).'); }
 
   console.log(`SamePage is set up. Capture runs in: ${folders.join('; ')}. Type /private in a session to skip it, /forget to drop what was not captured yet. Undo: npx -y ${url}/samepage-setup.tgz --uninstall`);
+}
+
+async function loginOnly() {
+  const home = samepageHome();
+  const config = readConfig(home);
+  const claude = findClaude() ?? config?.claudePath;
+  if (!config || !claude) throw new Fail('Run setup first.');
+  copyClient(home); // an older install may lack login.mjs
+  await login(home, claude, config.url);
 }
 
 async function uninstall() {
@@ -193,8 +262,8 @@ async function main() {
     const args = parseArgs(process.argv.slice(2));
     if (args.help) return console.log(USAGE);
     if (args.uninstall) return await uninstall();
-    if (!args.token) throw new Fail(USAGE);
-    await install(args);
+    if (args.login && !args.token && !args.join) await loginOnly();
+    else await install(args);
   } catch (e) {
     console.error(e instanceof Fail ? e.message : `Setup failed: ${/** @type {Error} */ (e).message}`);
     process.exit(1);

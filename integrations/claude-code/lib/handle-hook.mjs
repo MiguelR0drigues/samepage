@@ -5,6 +5,7 @@ import { readTranscript } from './transcript.mjs';
 import { MID_SESSION_EVERY } from './limits.mjs';
 
 const EXTRACT = fileURLToPath(new URL('../extract.mjs', import.meta.url));
+export const LOGIN_NOTE = (/** @type {string} */ url) => `SamePage capture is off until you approve the Claude login: run npx -y ${url}/samepage-setup.tgz --login`;
 const block = (/** @type {string} */ reason) => JSON.stringify({ decision: 'block', reason });
 
 /**
@@ -38,6 +39,9 @@ export function handleHook(event, input, { home, env, now }) {
     } else if (s.notice) {
       result = { stdout: JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: s.notice } }) };
       injected = s.notice;
+    } else if (!config.claudeToken && !s.loginNoticed) {
+      result = { stdout: JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: LOGIN_NOTE(config.url) } }) };
+      patch.loginNoticed = true;
     }
   } else if (event === 'stop') {
     if (!s.private && transcriptPath) {

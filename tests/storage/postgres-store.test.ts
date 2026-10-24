@@ -42,6 +42,26 @@ describe('PostgresStore', () => {
     expect(await store.findPersonByTokenHash('x')).toBeNull();
   });
 
+  it('a person can hold two tokens and both authenticate', async () => {
+    await store.addToken('miguel', 'h-miguel-2');
+    expect((await store.findPersonByTokenHash('h-miguel'))?.id).toBe('miguel');
+    expect((await store.findPersonByTokenHash('h-miguel-2'))?.id).toBe('miguel');
+  });
+
+  it('replaceTokens drops every old token', async () => {
+    await store.addToken('miguel', 'h-miguel-2');
+    expect((await store.replaceTokens('miguel', 'h3'))?.id).toBe('miguel');
+    expect(await store.findPersonByTokenHash('h-miguel')).toBeNull();
+    expect(await store.findPersonByTokenHash('h-miguel-2')).toBeNull();
+    expect((await store.findPersonByTokenHash('h3'))?.id).toBe('miguel');
+    expect(await store.replaceTokens('nobody', 'h4')).toBeNull();
+  });
+
+  it('finds a person by id', async () => {
+    expect((await store.findPersonById('joao'))?.name).toBe('Joao');
+    expect(await store.findPersonById('nobody')).toBeNull();
+  });
+
   it('searches by text', async () => {
     await store.insertEntry(base({ title: 'Per-seat pricing' }));
     await sleep();
@@ -127,6 +147,26 @@ describe('PostgresStore', () => {
     await expect(store.importAll(snap)).rejects.toThrow();
     expect(snap.pending).toHaveLength(2);
     expect(snap.corrections).toHaveLength(1);
+  });
+
+  it('export v2 carries tokens and imports back', async () => {
+    await store.addToken('miguel', 'h-miguel-2');
+    const snap = await store.exportAll();
+    expect(snap.version).toBe(2);
+    expect(snap.tokens.map((t) => t.tokenHash).sort()).toEqual(['h-joao', 'h-miguel', 'h-miguel-2']);
+    expect(snap.people[0]).not.toHaveProperty('tokenHash');
+    const fresh = new PostgresStore(await createTestDb());
+    await fresh.importAll(snap);
+    expect((await fresh.findPersonByTokenHash('h-miguel-2'))?.id).toBe('miguel');
+    expect(await fresh.exportAll()).toEqual(snap);
+  });
+
+  it('imports a v1 snapshot with people[].tokenHash', async () => {
+    const { people, entries } = await store.exportAll();
+    const v1 = { version: 1 as const, entries, people: people.map((p) => ({ ...p, tokenHash: `old-${p.id}` })) };
+    const fresh = new PostgresStore(await createTestDb());
+    await fresh.importAll(v1);
+    expect((await fresh.findPersonByTokenHash('old-joao'))?.id).toBe('joao');
   });
 
   it('importAll accepts a snapshot without pending/corrections', async () => {

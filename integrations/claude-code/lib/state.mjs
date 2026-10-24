@@ -3,7 +3,7 @@ import path from 'node:path';
 import { DEFAULT_DAILY_LIMIT, LOCK_STALE_MS } from './limits.mjs';
 
 /** @typedef {{ url: string, token: string, folders: string[], dailyLimit: number, claudePath: string | null, claudeToken: string | null }} Config */
-/** @typedef {{ transcriptPath: string | null, cwd: string | null, lastActivity: number, processedLine: number, processedAt: number, skipUntilLine: number, private: boolean, notes: string[], notice: string | null }} SessionState */
+/** @typedef {{ transcriptPath: string | null, cwd: string | null, lastActivity: number, processedLine: number, processedAt: number, skipUntilLine: number, private: boolean, notes: string[], notice: string | null, loginNoticed: boolean }} SessionState */
 
 const readJson = (/** @type {string} */ file) => {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
@@ -35,10 +35,16 @@ export function writeConfig(home, c) {
   if (process.platform !== 'win32') fs.chmodSync(file, 0o600);
 }
 
+/** Stores the Claude token, keeping the rest of config.json. @param {string} home @param {string} token */
+export function setClaudeToken(home, token) {
+  const c = readConfig(home);
+  if (c) writeConfig(home, { ...c, claudeToken: token });
+}
+
 /** @returns {SessionState} */
 const blankSession = () => ({
   transcriptPath: null, cwd: null, lastActivity: 0, processedLine: 0, processedAt: 0,
-  skipUntilLine: 0, private: false, notes: [], notice: null,
+  skipUntilLine: 0, private: false, notes: [], notice: null, loginNoticed: false,
 });
 
 /** @param {string} home @param {string} id @returns {SessionState} */

@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { mergeHooks, removeHooks } from '../../integrations/claude-code/lib/settings.mjs';
+import { mergeHooks, ourHookCommand, removeHooks } from '../../integrations/claude-code/lib/settings.mjs';
 
 const NODE = 'C:\\Program Files\\nodejs\\node.exe';
 const HOOK = 'C:\\Users\\Me Me\\.samepage\\hook.mjs';
@@ -36,6 +36,12 @@ it('a custom SAMEPAGE_HOME hook path is not duplicated and is removed by path', 
   const once = mergeHooks({}, NODE, custom);
   expect(mergeHooks(once, NODE, custom)).toEqual(once);
   expect(removeHooks(once, custom)).toEqual({ hooks: {} });
+});
+
+it('ourHookCommand returns the command of our hook, else undefined', () => {
+  expect(ourHookCommand({ hooks: { Stop: [other] } }, HOOK)).toBeUndefined();
+  expect(ourHookCommand({}, HOOK)).toBeUndefined();
+  expect(ourHookCommand(mergeHooks({ hooks: { Stop: [other] } }, '/opt/node', HOOK), HOOK)).toBe('/opt/node');
 });
 
 it('removeHooks leaves unrelated hooks and drops empty events', () => {

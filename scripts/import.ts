@@ -13,7 +13,8 @@ if (isMain(import.meta.url)) {
   } else {
     await runCli(async (store) => {
       const snapshot: Snapshot = JSON.parse(readFileSync(file, 'utf8'), reviveDates);
-      if (snapshot.version !== 1) throw new Error(`Unsupported snapshot version: ${snapshot.version}`);
+      const { version } = snapshot as { version: number };
+      if (version !== 1 && version !== 2) throw new Error(`Unsupported snapshot version: ${version}`);
       await store.importAll(snapshot);
       console.log(`Imported ${snapshot.people.length} people and ${snapshot.entries.length} entries from ${file}.`);
     });

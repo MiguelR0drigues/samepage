@@ -13,7 +13,7 @@ afterEach(() => { fs.rmSync(home, { recursive: true, force: true }); });
 it('loadSession defaults for an unknown id, saveSession round-trips', () => {
   expect(st.loadSession(home, 'x')).toEqual({
     transcriptPath: null, cwd: null, lastActivity: 0, processedLine: 0, processedAt: 0,
-    skipUntilLine: 0, private: false, notes: [], notice: null,
+    skipUntilLine: 0, private: false, notes: [], notice: null, loginNoticed: false,
   });
   const s = { ...st.loadSession(home, 'x'), processedLine: 7, notes: ['a'], private: true };
   st.saveSession(home, 'x', s);
@@ -99,4 +99,11 @@ it('paths honour env overrides', () => {
   expect(claudeDir({ CLAUDE_CONFIG_DIR: '/x/cl' })).toBe('/x/cl');
   expect(samepageHome({})).toBe(path.join(os.homedir(), '.samepage'));
   expect(claudeDir({})).toBe(path.join(os.homedir(), '.claude'));
+});
+
+it('setClaudeToken keeps every other config field', () => {
+  st.writeConfig(home, { url: 'u', token: 't', folders: ['/a'], claudePath: '/c', claudeToken: null });
+  const before = st.readConfig(home);
+  st.setClaudeToken(home, 'sk-ant-x');
+  expect(st.readConfig(home)).toEqual({ ...before, claudeToken: 'sk-ant-x' });
 });

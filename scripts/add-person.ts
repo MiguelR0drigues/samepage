@@ -1,9 +1,9 @@
-import { randomBytes } from 'node:crypto';
 import type { Store } from '../src/storage/store';
 import { sha256Hex } from '../src/http/app';
+import { newToken } from '../src/http/join';
 import { isMain, runCli } from './db';
 
-export const newToken = () => randomBytes(32).toString('hex');
+export { newToken };
 
 // The one line a teammate pastes: connects Claude Code (MCP, any folder) and turns on session capture.
 export const setupCommand = (token: string, url = process.env.SAMEPAGE_URL ?? 'https://samepage.scooli.workers.dev') =>

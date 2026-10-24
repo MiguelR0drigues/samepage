@@ -105,22 +105,23 @@ Privacy is enforced in layers, and the strongest ones don't depend on a model un
 
 ## Quick start
 
-> Joining a team that already runs SamePage? You need **Node 22+** and **Claude Code**.
+> Joining a team that already runs SamePage? You need **Claude Code** (the desktop app is enough).
 
-Ask your admin for your personal setup command and paste it into any terminal:
+1. Open the team link your admin shared (`https://<your-worker>/join/<code>`) and copy the message on the page.
+2. Paste it into Claude: the desktop app's Code tab, or a terminal session.
+3. Claude asks your name, confirms the company folder, installs Node 22 if it is missing, and runs the setup.
+4. A window opens to approve your Claude login, so capture uses **your own** Claude subscription. Approve it there.
+5. Open a new session: `/mcp` shows `samepage` connected, and your team summary arrives at the start of every session.
+
+Prefer the terminal? With Node 22+ installed:
 
 ```bash
-npx -y https://<your-worker>/samepage-setup.tgz <your-token>
+npx -y https://<your-worker>/samepage-setup.tgz --join <code>
 ```
 
-The installer asks which folders hold company work, then:
+The setup connects the SamePage MCP server to Claude Code (CLI and desktop app), adds the capture hooks to `~/.claude/settings.json` (the first install keeps a backup) and installs the capture client in `~/.samepage/`. The client then updates itself; there is nothing to re-run.
 
-- connects the SamePage MCP server to Claude Code (CLI and desktop app);
-- adds the capture hooks to `~/.claude/settings.json` (the first install keeps a backup);
-- installs the capture client in `~/.samepage/`;
-- runs `claude setup-token` so capture uses **your own** Claude subscription.
-
-Open a new Claude Code session: `/mcp` shows `samepage` connected, and your team summary arrives at the start of every session.
+Setting it up on a second computer? Use the same name and add `--same-person`. Someone else on the team has your name? Pick a distinct one, e.g. `"Ana Silva (Marketing)"`.
 
 To undo everything (hooks, MCP connection, `~/.samepage`):
 
@@ -159,13 +160,11 @@ npm install
 DATABASE_URL="<direct string>" npm run db:migrate
 ```
 
-**3. Create the team.** Each command prints that person's setup command, with their token, **once**. Send it through a private channel.
+**3. Create the system person** for non-human authors, such as a meeting-notes routine (teammates join with the team link in step 6):
 
 ```bash
-DATABASE_URL="<direct string>" SAMEPAGE_URL="https://<your-worker>" npm run person:add -- ana "Ana"
+DATABASE_URL="<direct string>" npm run person:add -- meet "Meet" --system
 ```
-
-Add `--system` for non-human authors, such as a meeting-notes routine.
 
 **4. Set the Worker secrets:**
 
@@ -181,19 +180,25 @@ Paste the **pooled** string for `DATABASE_URL`, and a long random value for `DAS
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
-**5. Deploy.** This first packs the installer into `public/samepage-setup.tgz`, which the Worker serves as a static asset.
+**5. Deploy.** This first packs the installer into `public/samepage-setup.tgz` and the current client into `public/client.json`, which the Worker serves as static assets.
 
 ```bash
 npm run deploy
 ```
 
-**6. Check it:**
+**6. Create the team link.** It stores a random code as the Worker secret `JOIN_CODE` and prints `https://<your-worker>/join/<code>`. Share it with your team.
+
+```bash
+SAMEPAGE_URL="https://<your-worker>" npm run join:new
+```
+
+**7. Check it:**
 
 ```bash
 curl https://<your-worker>/health
 ```
 
-It should print `ok`. Then check your token with `curl -H "Authorization: Bearer <token>" https://<your-worker>/summary`.
+It should print `ok`, and the team link should open the join page.
 
 <details>
 <summary><b>Using PowerShell?</b></summary>
@@ -202,7 +207,7 @@ Set the variable once per terminal, and use `curl.exe` (plain `curl` is an alias
 
 ```powershell
 $env:DATABASE_URL="<direct string>"; npm run db:migrate
-npm run person:add -- ana "Ana"
+npm run person:add -- meet "Meet" --system
 curl.exe https://<your-worker>/health
 ```
 
@@ -212,8 +217,10 @@ curl.exe https://<your-worker>/health
 
 | Task | Command |
 |---|---|
-| Add a teammate | `npm run person:add -- <id> "<Name>" [--system]` |
-| Rotate a lost or leaked token | `npm run person:rotate -- <id>` (the old token stops working at once) |
+| Add a teammate | Share the team link |
+| Replace the team link (it leaked, or someone left) | `npm run join:new` (the old link stops working; members are not affected) |
+| Add a person by hand (e.g. a system author) | `npm run person:add -- <id> "<Name>" [--system]` |
+| Cut off a person's computers | `npm run person:rotate -- <id>` (every old token stops working at once; to keep them out, also replace the team link) |
 | Sign everyone out of the dashboard | Set a new `DASHBOARD_SECRET` |
 | Back up everything as JSON | `npm run db:export -- backup.json` |
 | Restore into an empty database | `npm run db:import -- backup.json` |
@@ -221,7 +228,9 @@ curl.exe https://<your-worker>/health
 > [!WARNING]
 > Export files contain token hashes. Store them privately.
 
-When you change the capture client, bump `version` in [integrations/claude-code/package.json](integrations/claude-code/package.json), or `npx` may reuse a cached old installer.
+The client version is computed from its files at build time, so there is nothing to bump. Every deploy ships the current client to all teammates within 24 hours.
+
+A release with a new migration: run `db:migrate` right before it is deployed. The old Worker fails on the new schema until the deploy finishes.
 
 ## Dashboard
 
@@ -320,7 +329,7 @@ SamePage started as a tool for one small team and is young. Issues and pull requ
 How changes land:
 
 - `main` is protected: every change goes through a pull request with passing CI and an approval from the maintainer ([CODEOWNERS](.github/CODEOWNERS)).
-- Production is deployed only by the [Deploy workflow](.github/workflows/deploy.yml), when a pull request is merged into `main`.
+- Production is deployed only by the [Deploy workflow](.github/workflows/deploy.yml), when a pull request is merged into `main`. A pull request that adds a migration needs it applied to production right before it is merged.
 - On your first pull request, a bot asks you to sign the [Contributor License Agreement](CLA.md) with a comment. You keep the copyright in your work; the CLA lets the maintainer also offer SamePage under a commercial license.
 - Report security problems privately, as described in [SECURITY.md](SECURITY.md).
 

@@ -9,6 +9,10 @@ const EVENTS = /** @type {const} */ ([
 const isOurs = (/** @type {any} */ h, /** @type {string | undefined} */ hookPath) =>
   /[\\/]\.samepage[\\/]hook\.mjs$/.test(String(h?.args?.[0] ?? '')) || (!!hookPath && h?.args?.[0] === hookPath);
 
+/** The command of our existing hook, so a rewrite keeps the node the installer chose. @param {Record<string, any>} settings @param {string} hookPath @returns {string | undefined} */
+export const ourHookCommand = (settings, hookPath) =>
+  Object.values(settings.hooks ?? {}).flat().flatMap((g) => g?.hooks ?? []).find((h) => isOurs(h, hookPath) && typeof h.command === 'string')?.command;
+
 /** Drops our handlers (and the groups and events they leave empty). @param {Record<string, any>} hooks @param {string} [hookPath] */
 function withoutOurs(hooks, hookPath) {
   /** @type {Record<string, any>} */

@@ -8,6 +8,7 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "person:add": "tsx scripts/add-person.ts",
+    "join:new": "node scripts/join-new.mjs",
     "person:rotate": "tsx scripts/rotate-token.ts",
     "db:export": "tsx scripts/export.ts",
     "db:import": "tsx scripts/import.ts",
