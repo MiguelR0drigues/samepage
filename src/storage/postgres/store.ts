@@ -1,10 +1,10 @@
 import { and, asc, count, desc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import type { PgDatabase } from 'drizzle-orm/pg-core';
-import type { Change, Entry, NewEntry, Person, Snapshot } from '../../domain/types';
+import type { Change, Correction, Entry, NewEntry, Pending, PendingAnswer, Person, Snapshot } from '../../domain/types';
 import type { EntryFilter, EntryPatch, Store } from '../store';
 import * as schema from './schema';
 
-const { entries, entryAuthors, people } = schema;
+const { corrections, entries, entryAuthors, pending, people } = schema;
 type EntryRow = typeof entries.$inferSelect;
 type PersonRow = typeof people.$inferSelect;
 
@@ -125,28 +125,71 @@ export class PostgresStore implements Store {
     });
   }
 
+  async insertPending(p: Pick<Pending, 'personId' | 'candidate' | 'question' | 'sourceRef'>) {
+    const [row] = await this.db.insert(pending).values(p).returning();
+    return row!;
+  }
+
+  async getPending(id: string, opts?: { forUpdate?: boolean }) {
+    const q = this.db.select().from(pending).where(eq(pending.id, id));
+    const [row] = await (opts?.forUpdate ? q.for('update') : q);
+    return row ?? null;
+  }
+
+  listPending(personId: string, limit = DEFAULT_LIMIT) {
+    return this.db.select().from(pending)
+      .where(and(eq(pending.personId, personId), eq(pending.status, 'open')))
+      .orderBy(asc(pending.createdAt), asc(pending.id)).limit(limit);
+  }
+
+  async answerPending(id: string, answer: PendingAnswer, at: Date) {
+    const [row] = await this.db.update(pending).set({ status: 'answered', answer, answeredAt: at })
+      .where(eq(pending.id, id)).returning();
+    if (!row) throw new Error(`Pending not found: ${id}`);
+    return row;
+  }
+
+  async insertCorrection(c: Pick<Correction, 'personId' | 'verdict' | 'candidate'>) {
+    const [row] = await this.db.insert(corrections).values(c).returning();
+    return row!;
+  }
+
+  listCorrections(personId: string, limit: number) {
+    return this.db.select().from(corrections).where(eq(corrections.personId, personId))
+      .orderBy(desc(corrections.createdAt), desc(corrections.id)).limit(limit);
+  }
+
   transaction<T>(fn: (tx: Store) => Promise<T>): Promise<T> {
     return this.db.transaction((tx) => fn(new PostgresStore(tx)));
   }
 
   async exportAll(): Promise<Snapshot> {
-    const [peopleRows, entryRows] = await Promise.all([
+    const [peopleRows, entryRows, pendingRows, correctionRows] = await Promise.all([
       this.db.select().from(people).orderBy(asc(people.id)),
       this.db.select().from(entries).orderBy(asc(entries.createdAt), asc(entries.id)),
+      this.db.select().from(pending).orderBy(asc(pending.createdAt), asc(pending.id)),
+      this.db.select().from(corrections).orderBy(asc(corrections.createdAt), asc(corrections.id)),
     ]);
-    return { version: 1, people: peopleRows, entries: await this.withAuthors(entryRows) };
+    return {
+      version: 1, people: peopleRows, entries: await this.withAuthors(entryRows),
+      pending: pendingRows, corrections: correctionRows,
+    };
   }
 
   async importAll(s: Snapshot) {
     await this.db.transaction(async (tx) => {
       const [p] = await tx.select({ n: count() }).from(people);
       const [e] = await tx.select({ n: count() }).from(entries);
-      if (p!.n > 0 || e!.n > 0) throw new Error('Cannot import: the database is not empty.');
+      const [q] = await tx.select({ n: count() }).from(pending);
+      const [c] = await tx.select({ n: count() }).from(corrections);
+      if (p!.n > 0 || e!.n > 0 || q!.n > 0 || c!.n > 0) throw new Error('Cannot import: the database is not empty.');
       if (s.people.length > 0) await tx.insert(people).values(s.people);
       // One multi-row statement, so entries may reference each other (supersedes/target).
       if (s.entries.length > 0) await tx.insert(entries).values(s.entries.map(({ authors: _a, ...r }) => r));
       const links = s.entries.flatMap((x) => x.authors.map((personId) => ({ entryId: x.id, personId })));
       if (links.length > 0) await tx.insert(entryAuthors).values(links);
+      if (s.pending?.length) await tx.insert(pending).values(s.pending);
+      if (s.corrections?.length) await tx.insert(corrections).values(s.corrections);
     });
   }
 }

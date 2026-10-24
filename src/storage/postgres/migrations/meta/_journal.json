@@ -15,6 +15,13 @@
       "when": 1792800873432,
       "tag": "0001_gray_ultimates",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792807660581,
+      "tag": "0002_wandering_machine_man",
+      "breakpoints": true
     }
   ]
 }

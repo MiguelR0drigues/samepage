@@ -9,6 +9,6 @@ describe('schema', () => {
       sql`select table_name from information_schema.tables where table_schema = 'public'`,
     );
     const names = res.rows.map((r) => r.table_name);
-    expect(names).toEqual(expect.arrayContaining(['people', 'entries', 'entry_authors']));
+    expect(names).toEqual(expect.arrayContaining(['people', 'entries', 'entry_authors', 'pending', 'corrections']));
   });
 });

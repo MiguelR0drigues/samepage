@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createTestDb } from '../helpers/db';
 import { PostgresStore } from '../../src/storage/postgres/store';
-import type { NewEntry } from '../../src/domain/types';
+import type { Candidate, NewEntry } from '../../src/domain/types';
 
 const sleep = (ms = 5) => new Promise((r) => setTimeout(r, ms));
 
@@ -11,6 +11,8 @@ const base = (over: Partial<NewEntry> = {}): NewEntry => ({
   sourceRef: null, authors: ['miguel'], recordedBy: 'miguel', supersedesId: null, targetId: null,
   resolutionNote: null, workstreamId: null, ...over,
 });
+
+const cand = (over: Partial<Candidate> = {}): Candidate => ({ type: 'decision', title: 'T', content: 'C', area: 'general', ...over });
 
 async function setup() {
   const store = new PostgresStore(await createTestDb());
@@ -111,12 +113,53 @@ describe('PostgresStore', () => {
     const w = await store.insertEntry(base({ type: 'workstream', status: 'in_progress' }));
     await store.insertEntry(base({ type: 'update', workstreamId: w.id }));
     await store.touchLastSeen('joao', new Date());
+    const p = await store.insertPending({ personId: 'miguel', candidate: cand({ authors: ['joao'] }), question: 'Q?', sourceRef: 'web@main' });
+    await store.answerPending(p.id, 'record', new Date());
+    await store.insertPending({ personId: 'joao', candidate: cand(), question: 'Q2?', sourceRef: null });
+    await store.insertCorrection({ personId: 'miguel', verdict: 'personal', candidate: cand() });
     const snap = await store.exportAll();
     const fresh = new PostgresStore(await createTestDb());
     await fresh.importAll(snap);
     expect(await fresh.exportAll()).toEqual(snap);
     expect(snap.entries.find((e) => e.type === 'update')?.workstreamId).toBe(w.id);
     await expect(store.importAll(snap)).rejects.toThrow();
+    expect(snap.pending).toHaveLength(2);
+    expect(snap.corrections).toHaveLength(1);
+  });
+
+  it('importAll accepts a snapshot without pending/corrections', async () => {
+    await store.insertEntry(base());
+    const { pending: _p, corrections: _c, ...old } = await store.exportAll();
+    const fresh = new PostgresStore(await createTestDb());
+    await fresh.importAll(old);
+    expect((await fresh.exportAll()).entries).toEqual(old.entries);
+  });
+
+  it('pending: insert, list open oldest first, answer', async () => {
+    const a = await store.insertPending({ personId: 'miguel', candidate: cand({ title: 'a' }), question: 'Qa?', sourceRef: 'r' });
+    await sleep();
+    const b = await store.insertPending({ personId: 'miguel', candidate: cand({ title: 'b' }), question: 'Qb?', sourceRef: null });
+    await store.insertPending({ personId: 'joao', candidate: cand(), question: 'Qj?', sourceRef: null });
+    expect(a).toMatchObject({ status: 'open', answer: null, answeredAt: null, sourceRef: 'r', question: 'Qa?' });
+    expect((await store.listPending('miguel')).map((p) => p.id)).toEqual([a.id, b.id]);
+    expect(await store.listPending('miguel', 1)).toHaveLength(1);
+    expect(await store.listPending('joao')).toHaveLength(1);
+    const now = new Date();
+    const done = await store.answerPending(a.id, 'record', now);
+    expect(done).toMatchObject({ status: 'answered', answer: 'record', answeredAt: now });
+    expect(await store.getPending(a.id)).toEqual(done);
+    expect((await store.listPending('miguel')).map((p) => p.id)).toEqual([b.id]);
+    expect(await store.getPending('00000000-0000-0000-0000-000000000000', { forUpdate: true })).toBeNull();
+  });
+
+  it('corrections: newest first, per person, limited', async () => {
+    const c1 = await store.insertCorrection({ personId: 'miguel', verdict: 'company', candidate: cand({ title: '1' }) });
+    await sleep();
+    const c2 = await store.insertCorrection({ personId: 'miguel', verdict: 'not_worth_recording', candidate: cand({ title: '2' }) });
+    await store.insertCorrection({ personId: 'joao', verdict: 'personal', candidate: cand() });
+    expect((await store.listCorrections('miguel', 10)).map((c) => c.id)).toEqual([c2.id, c1.id]);
+    expect(await store.listCorrections('miguel', 1)).toHaveLength(1);
+    expect(c1.candidate.title).toBe('1');
   });
 
   it('getEntry with forUpdate runs inside a transaction and returns the entry', async () => {
