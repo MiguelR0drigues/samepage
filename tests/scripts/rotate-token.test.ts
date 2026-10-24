@@ -16,6 +16,14 @@ it('rotateToken issues a new token and invalidates the old one', async () => {
   expect(person.id).toBe('miguel');
 });
 
+it('rotateToken also cuts off a second machine', async () => {
+  const store = new PostgresStore(await createTestDb());
+  await createPerson(store, { id: 'miguel', name: 'Miguel', isSystem: false });
+  await store.addToken('miguel', await sha256Hex('laptop-2'));
+  await rotateToken(store, 'miguel');
+  expect(await store.findPersonByTokenHash(await sha256Hex('laptop-2'))).toBeNull();
+});
+
 it('rotateToken rejects an unknown person', async () => {
   const store = new PostgresStore(await createTestDb());
   await expect(rotateToken(store, 'ana')).rejects.toThrow('Unknown person: ana');

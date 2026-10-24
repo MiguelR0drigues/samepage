@@ -5,10 +5,15 @@ export const people = pgTable('people', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   isSystem: boolean('is_system').notNull().default(false),
-  tokenHash: text('token_hash').notNull().unique(),
   lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
   dashboardSeenAt: timestamp('dashboard_seen_at', { withTimezone: true }),
   dashboardNonce: text('dashboard_nonce'),
+});
+
+export const personTokens = pgTable('person_tokens', {
+  personId: text('person_id').notNull().references(() => people.id),
+  tokenHash: text('token_hash').notNull().unique(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const entries = pgTable('entries', {

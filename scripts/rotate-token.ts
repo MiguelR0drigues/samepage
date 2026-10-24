@@ -3,10 +3,10 @@ import { sha256Hex } from '../src/http/app';
 import { newToken, setupCommand } from './add-person';
 import { isMain, runCli } from './db';
 
-// Replaces a person's token; the old one stops working immediately.
+// Replaces all of a person's tokens (one per computer); the old ones stop working immediately.
 export async function rotateToken(store: Store, id: string) {
   const token = newToken();
-  const person = await store.setTokenHash(id, await sha256Hex(token));
+  const person = await store.replaceTokens(id, await sha256Hex(token));
   if (!person) throw new Error(`Unknown person: ${id}`);
   return { person, token };
 }

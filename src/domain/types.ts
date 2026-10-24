@@ -26,6 +26,10 @@ export interface Pending {
 export type CorrectionVerdict = 'company' | 'personal' | 'not_worth_recording';
 export interface Correction { id: string; personId: string; verdict: CorrectionVerdict; candidate: Candidate; createdAt: Date }
 // pending/corrections are optional so Phase 1 exports still import.
-export interface Snapshot {
-  version: 1; people: (Person & { tokenHash: string; dashboardNonce?: string | null })[]; entries: Entry[]; pending?: Pending[]; corrections?: Correction[];
-}
+export interface PersonToken { personId: string; tokenHash: string; createdAt: Date }
+type SnapshotBody = { entries: Entry[]; pending?: Pending[]; corrections?: Correction[] };
+type SnapshotPerson = Person & { dashboardNonce?: string | null };
+export type SnapshotV2 = SnapshotBody & { version: 2; people: SnapshotPerson[]; tokens: PersonToken[] };
+// Old exports kept one token per person on the person row.
+export type SnapshotV1 = SnapshotBody & { version: 1; people: (SnapshotPerson & { tokenHash: string })[] };
+export type Snapshot = SnapshotV1 | SnapshotV2;

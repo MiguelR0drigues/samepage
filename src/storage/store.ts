@@ -1,4 +1,4 @@
-import type { Change, Correction, Entry, EntryStatus, EntryType, NewEntry, Pending, PendingAnswer, Person, Snapshot } from '../domain/types';
+import type { Change, Correction, Entry, EntryStatus, EntryType, NewEntry, Pending, PendingAnswer, Person, Snapshot, SnapshotV2 } from '../domain/types';
 
 export interface EntryFilter { type?: EntryType; status?: EntryStatus; area?: string; limit?: number;
   workstreamId?: string; supersedesId?: string; targetId?: string; ids?: string[] }
@@ -7,6 +7,7 @@ export type EntryPatch = Partial<Pick<Entry, 'type' | 'status' | 'title' | 'cont
 
 export interface Store {
   findPersonByTokenHash(hash: string): Promise<Person | null>;
+  findPersonById(id: string): Promise<Person | null>;
   listPeople(): Promise<Person[]>;
   addPerson(p: { id: string; name: string; isSystem: boolean }, tokenHash: string): Promise<Person>;
   touchLastSeen(personId: string, at: Date): Promise<void>;
@@ -16,7 +17,8 @@ export interface Store {
   consumeDashboardNonce(personId: string, nonce: string): Promise<boolean>;
   // Does not touch updatedAt/updatedBy, so moved updates do not flood "what's new". Returns rows moved.
   moveUpdates(fromWorkstreamId: string, toWorkstreamId: string): Promise<number>;
-  setTokenHash(personId: string, tokenHash: string): Promise<Person | null>; // null if the person does not exist
+  addToken(personId: string, tokenHash: string): Promise<void>;       // one token per computer
+  replaceTokens(personId: string, tokenHash: string): Promise<Person | null>; // drops every old token; null if the person does not exist
   // Includes deleted. forUpdate locks the row (SELECT ... FOR UPDATE) until the transaction ends: call it inside transaction() to serialize concurrent changes.
   getEntry(id: string, opts?: { forUpdate?: boolean }): Promise<Entry | null>;
   listEntries(f: EntryFilter): Promise<Entry[]>;                 // excludes deleted, newest first, limit default 20
@@ -33,6 +35,6 @@ export interface Store {
   insertCorrection(c: Pick<Correction, 'personId' | 'verdict' | 'candidate'>): Promise<Correction>;
   listCorrections(personId: string, limit: number): Promise<Correction[]>; // newest first
   transaction<T>(fn: (tx: Store) => Promise<T>): Promise<T>;
-  exportAll(): Promise<Snapshot>;
+  exportAll(): Promise<SnapshotV2>;
   importAll(s: Snapshot): Promise<void>;                        // throws if the database is not empty
 }

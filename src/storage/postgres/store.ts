@@ -1,15 +1,15 @@
 import { and, asc, count, desc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import type { PgDatabase } from 'drizzle-orm/pg-core';
-import type { Change, Correction, Entry, NewEntry, Pending, PendingAnswer, Person, Snapshot } from '../../domain/types';
+import type { Change, Correction, Entry, NewEntry, Pending, PendingAnswer, Person, Snapshot, SnapshotV2 } from '../../domain/types';
 import type { EntryFilter, EntryPatch, Store } from '../store';
 import * as schema from './schema';
 
-const { corrections, entries, entryAuthors, pending, people } = schema;
+const { corrections, entries, entryAuthors, pending, people, personTokens } = schema;
 type EntryRow = typeof entries.$inferSelect;
 type PersonRow = typeof people.$inferSelect;
 
 const DEFAULT_LIMIT = 20;
-const toPerson = ({ tokenHash: _t, dashboardNonce: _n, ...p }: PersonRow): Person => p;
+const toPerson = ({ dashboardNonce: _n, ...p }: PersonRow): Person => p;
 
 export class PostgresStore implements Store {
   constructor(private db: PgDatabase<any, typeof schema>) {}
@@ -32,7 +32,13 @@ export class PostgresStore implements Store {
   }
 
   async findPersonByTokenHash(hash: string) {
-    const [row] = await this.db.select().from(people).where(eq(people.tokenHash, hash));
+    const [row] = await this.db.select({ person: people }).from(personTokens)
+      .innerJoin(people, eq(people.id, personTokens.personId)).where(eq(personTokens.tokenHash, hash));
+    return row ? toPerson(row.person) : null;
+  }
+
+  async findPersonById(id: string) {
+    const [row] = await this.db.select().from(people).where(eq(people.id, id));
     return row ? toPerson(row) : null;
   }
 
@@ -41,8 +47,11 @@ export class PostgresStore implements Store {
   }
 
   async addPerson(p: { id: string; name: string; isSystem: boolean }, tokenHash: string) {
-    const [row] = await this.db.insert(people).values({ ...p, tokenHash }).returning();
-    return toPerson(row!);
+    return this.db.transaction(async (tx) => {
+      const [row] = await tx.insert(people).values(p).returning();
+      await tx.insert(personTokens).values({ personId: p.id, tokenHash });
+      return toPerson(row!);
+    });
   }
 
   async touchLastSeen(personId: string, at: Date) {
@@ -69,9 +78,18 @@ export class PostgresStore implements Store {
     return rows.length;
   }
 
-  async setTokenHash(personId: string, tokenHash: string) {
-    const [row] = await this.db.update(people).set({ tokenHash }).where(eq(people.id, personId)).returning();
-    return row ? toPerson(row) : null;
+  async addToken(personId: string, tokenHash: string) {
+    await this.db.insert(personTokens).values({ personId, tokenHash });
+  }
+
+  async replaceTokens(personId: string, tokenHash: string) {
+    return this.db.transaction(async (tx) => {
+      const [row] = await tx.select().from(people).where(eq(people.id, personId));
+      if (!row) return null;
+      await tx.delete(personTokens).where(eq(personTokens.personId, personId));
+      await tx.insert(personTokens).values({ personId, tokenHash });
+      return toPerson(row);
+    });
   }
 
   async getEntry(id: string, opts?: { forUpdate?: boolean }) {
@@ -201,15 +219,16 @@ export class PostgresStore implements Store {
     return this.db.transaction((tx) => fn(new PostgresStore(tx)));
   }
 
-  async exportAll(): Promise<Snapshot> {
-    const [peopleRows, entryRows, pendingRows, correctionRows] = await Promise.all([
+  async exportAll(): Promise<SnapshotV2> {
+    const [peopleRows, tokenRows, entryRows, pendingRows, correctionRows] = await Promise.all([
       this.db.select().from(people).orderBy(asc(people.id)),
+      this.db.select().from(personTokens).orderBy(asc(personTokens.personId), asc(personTokens.createdAt), asc(personTokens.tokenHash)),
       this.db.select().from(entries).orderBy(asc(entries.createdAt), asc(entries.id)),
       this.db.select().from(pending).orderBy(asc(pending.createdAt), asc(pending.id)),
       this.db.select().from(corrections).orderBy(asc(corrections.createdAt), asc(corrections.id)),
     ]);
     return {
-      version: 1, people: peopleRows, entries: await this.withAuthors(entryRows),
+      version: 2, people: peopleRows, tokens: tokenRows, entries: await this.withAuthors(entryRows),
       pending: pendingRows, corrections: correctionRows,
     };
   }
@@ -221,7 +240,12 @@ export class PostgresStore implements Store {
       const [q] = await tx.select({ n: count() }).from(pending);
       const [c] = await tx.select({ n: count() }).from(corrections);
       if (p!.n > 0 || e!.n > 0 || q!.n > 0 || c!.n > 0) throw new Error('Cannot import: the database is not empty.');
-      if (s.people.length > 0) await tx.insert(people).values(s.people);
+      // v1 kept one token per person on the person row.
+      const [rows, tokens] = s.version === 1
+        ? [s.people.map(({ tokenHash: _t, ...x }) => x), s.people.map((x) => ({ personId: x.id, tokenHash: x.tokenHash }))]
+        : [s.people, s.tokens];
+      if (rows.length > 0) await tx.insert(people).values(rows);
+      if (tokens.length > 0) await tx.insert(personTokens).values(tokens);
       // One multi-row statement, so entries may reference each other (supersedes/target).
       if (s.entries.length > 0) await tx.insert(entries).values(s.entries.map(({ authors: _a, ...r }) => r));
       const links = s.entries.flatMap((x) => x.authors.map((personId) => ({ entryId: x.id, personId })));

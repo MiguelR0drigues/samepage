@@ -29,6 +29,13 @@
       "when": 1792812637734,
       "tag": "0003_true_human_torch",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792867973591,
+      "tag": "0004_supreme_jackal",
+      "breakpoints": true
     }
   ]
 }
