@@ -25,4 +25,4 @@ jobs:
           path-to-signatures: signatures/cla.json
           path-to-document: https://github.com/MiguelR0drigues/samepage/blob/main/CLA.md
           branch: cla-signatures
-          allowlist: MiguelR0drigues,dependabot[bot]
+          allowlist: MiguelR0drigues,Miguel Rodrigues,dependabot[bot]
