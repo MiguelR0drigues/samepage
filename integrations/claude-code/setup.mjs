@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // samepage-setup <token>: connects Claude Code to SamePage and turns on session capture.
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -12,6 +12,8 @@ import { readConfig, writeConfig } from './lib/state.mjs';
 import { runLogin } from './login.mjs';
 
 const DEFAULT_URL = 'https://samepage.scooli.workers.dev';
+// read on use: login.mjs imports this file from the home folder, which has no package.json
+const ownVersion = () => JSON.parse(fs.readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version;
 const USAGE = 'Usage: samepage-setup <token> | --join <code> [--name "<name>"] [--same-person] [--url <url>] [--folders "<a>;<b>"] [--claude-token <t>] [--uninstall] | --login';
 const TAKEN = (/** @type {string} */ name) => `A member named ${name} already exists. If that is you (another computer), run again with --same-person. If not, run again with a different --name, e.g. "${name} (Marketing)".`;
 
@@ -179,7 +181,28 @@ function copyClient(/** @type {string} */ home) {
   const src = path.dirname(fileURLToPath(import.meta.url));
   for (const f of fs.readdirSync(src).filter((f) => f.endsWith('.mjs'))) fs.copyFileSync(path.join(src, f), path.join(home, f));
   fs.cpSync(path.join(src, 'lib'), path.join(home, 'lib'), { recursive: true });
-  fs.writeFileSync(path.join(home, 'version'), JSON.parse(fs.readFileSync(path.join(src, 'package.json'), 'utf8')).version); // what update.mjs compares
+  fs.writeFileSync(path.join(home, 'version'), ownVersion()); // what update.mjs compares
+}
+
+/**
+ * The server's client version when it differs from this installer's, else null (also when the server can't tell).
+ * @param {string} url @param {string} own @param {typeof fetch} [fetchFn]
+ */
+export async function newerInstaller(url, own, fetchFn = fetch) {
+  try {
+    const r = await fetchFn(`${url}/client-version.txt`);
+    const v = r.ok ? (await r.text()).trim() : '';
+    // it goes into a command line below: accept only a plain version
+    return /^[\w.-]{1,64}$/.test(v) && v !== own ? v : null;
+  } catch { return null; }
+}
+
+// npx reuses a cached tarball for the same URL, so an old installer can run: hand over to the current one by a versioned URL
+function handOver(/** @type {string} */ url, /** @type {string} */ version) {
+  const win = process.platform === 'win32';
+  const args = ['-y', `${url}/samepage-setup.tgz?v=${version}`, ...process.argv.slice(2)];
+  const r = spawnSync(win ? 'npx.cmd' : 'npx', win ? args.map((a) => `"${a}"`) : args, { stdio: 'inherit', shell: win, env: { ...process.env, SAMEPAGE_FRESH: '1' } });
+  process.exit(r.status ?? 1);
 }
 
 /** Approves the Claude login: inline in a terminal, else in a new window the installer does not wait for. */
@@ -261,6 +284,8 @@ async function main() {
   try {
     const args = parseArgs(process.argv.slice(2));
     if (args.help) return console.log(USAGE);
+    const newer = process.env.SAMEPAGE_FRESH ? null : await newerInstaller(args.url, ownVersion());
+    if (newer) return handOver(args.url, newer);
     if (args.uninstall) return await uninstall();
     if (args.login && !args.token && !args.join) await loginOnly();
     else await install(args);
