@@ -38,7 +38,7 @@ const out = {
   update: { title: 'Pricing', content: 'Set pricing. Next: page.', area: 'pricing', workstream_id: null, workstream_title: 'Pricing' },
 };
 
-function deps(o: { ctxStatus?: number; applyStatus?: number; applyResult?: object; claudeOut?: unknown; claudeError?: boolean; dailyLimit?: number; onClaude?: () => void } = {}) {
+function deps(o: { ctxStatus?: number; applyStatus?: number; applyResult?: object; claudeOut?: unknown; claudeError?: boolean; dailyLimit?: number; onClaude?: () => void; claudeToken?: string | null } = {}) {
   const calls: { url: string; init: any }[] = [];
   const claudeCalls: any[] = [];
   const fetch = async (url: string, init: any = {}) => {
@@ -53,18 +53,30 @@ function deps(o: { ctxStatus?: number; applyStatus?: number; applyResult?: objec
     if (o.claudeError) throw new Error('claude failed');
     return o.claudeOut ?? out;
   };
-  const config = { url: 'https://sp.test/', token: 'tok', folders: [], dailyLimit: o.dailyLimit ?? 20, claudePath: null, claudeToken: 'oat' };
+  const config = { url: 'https://sp.test/', token: 'tok', folders: [], dailyLimit: o.dailyLimit ?? 20, claudePath: null, claudeToken: o.claudeToken === undefined ? 'oat' : o.claudeToken };
   return { d: { home, config, env: {}, fetch: fetch as any, runClaude, now: NOW }, calls, claudeCalls };
 }
 const logText = () => { try { return fs.readFileSync(path.join(home, 'capture.log'), 'utf8'); } catch { return ''; } };
 
-it('mid pass below 40 messages does nothing', async () => {
-  session('s1');
+it('mid pass below 15 new user messages does nothing, at 15 it runs', async () => {
+  session('s1', { transcriptPath: transcript(14) });
   const { d, calls, claudeCalls } = deps();
   expect(await runPass('s1', 'mid', d)).toBe('skipped');
   expect(calls).toHaveLength(0);
   expect(claudeCalls).toHaveLength(0);
   expect(loadSession(home, 's1').processedLine).toBe(0);
+  session('s2', { transcriptPath: transcript(15) });
+  expect(await runPass('s2', 'mid', d)).toBe('done');
+});
+
+it('no Claude token: skipped before using the daily limit, logged once', async () => {
+  session('s1');
+  const { d, calls, claudeCalls } = deps({ claudeToken: null });
+  expect(await runPass('s1', 'final', d)).toBe('skipped');
+  expect(calls).toHaveLength(0);
+  expect(claudeCalls).toHaveLength(0);
+  expect(fs.existsSync(path.join(home, 'usage.json'))).toBe(false);
+  expect(logText().match(/s1 final: no Claude token \(run setup again\)\n/g)).toHaveLength(1);
 });
 
 it('final pass sends only items and update, never excerpt text', async () => {

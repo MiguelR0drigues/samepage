@@ -3,6 +3,8 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { CLAUDE_TIMEOUT_MS } from './limits.mjs';
 
+const KEEP = ['CLAUDE_CONFIG_DIR', 'CLAUDE_CODE_GIT_BASH_PATH'];
+
 /**
  * The parent session's env minus Claude/Anthropic keys, so `claude -p` runs on its own token.
  * @param {Record<string, string | undefined>} env
@@ -12,7 +14,7 @@ import { CLAUDE_TIMEOUT_MS } from './limits.mjs';
 export function sanitizeEnv(env, claudeToken) {
   /** @type {Record<string, string>} */ const out = {};
   for (const [k, v] of Object.entries(env)) {
-    if (v !== undefined && (k === 'CLAUDE_CONFIG_DIR' || !/^(CLAUDE|ANTHROPIC_)/.test(k))) out[k] = v;
+    if (v !== undefined && (KEEP.includes(k) || !/^(CLAUDE|ANTHROPIC_)/.test(k))) out[k] = v;
   }
   out.SAMEPAGE_EXTRACTOR = '1';
   if (claudeToken) out.CLAUDE_CODE_OAUTH_TOKEN = claudeToken;
@@ -62,7 +64,8 @@ export function runClaude({ command, prompt, systemPromptFile, schema, cwd, env,
       try { out = JSON.parse(stdout); } catch {
         return reject(new Error(code ? `claude exited ${code}` : 'claude output is not JSON'));
       }
-      if (out?.is_error) return reject(new Error(`claude error: ${String(out.result).slice(0, 200)}`));
+      // never out.result: it can be model text, and this message goes to the log
+      if (out?.is_error) return reject(new Error(`claude error: ${String(out.subtype || 'error').slice(0, 100)}`));
       if (code) return reject(new Error(`claude exited ${code}`));
       if (out?.structured_output !== undefined) return resolve(out.structured_output);
       try { resolve(JSON.parse(out?.result)); } catch { reject(new Error('claude result is not JSON')); }

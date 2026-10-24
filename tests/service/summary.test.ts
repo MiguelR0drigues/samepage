@@ -101,6 +101,15 @@ describe('sessionSummary', () => {
     expect(await sessionSummary(store, await fresh('joao'), new Date())).not.toContain('Is this about the company?');
   });
 
+  it('a very long pending question is cut and does not push out the principles', async () => {
+    await memory.record(miguel, { type: 'principle', title: 'Keep it small', content: 'Prefer small changes.', area: 'process' });
+    await store.insertPending({ personId: 'miguel', candidate: { type: 'view', title: 'T', content: 'c', area: 'a' }, question: 'q'.repeat(4000), sourceRef: null });
+    const text = await sessionSummary(store, miguel, new Date());
+    expect(text).toContain('## Principles\n- Keep it small: Prefer small changes.');
+    expect(text).toContain(`] ${'q'.repeat(200)}\n`);
+    expect(text).not.toContain('q'.repeat(201));
+  });
+
   it('deleted principles and decisions are not listed', async () => {
     const p = await memory.record(miguel, { type: 'principle', title: 'Gone principle', content: 'x', area: 'p' });
     const d = await memory.record(miguel, { type: 'decision', title: 'Gone decision', content: 'x', area: 'a' });

@@ -1,6 +1,6 @@
 import type { Candidate, CandidateType, CorrectionVerdict, Entry, EntryStatus, EntryType, Pending, PendingAnswer, Person } from '../domain/types';
 import type { Store } from '../storage/store';
-import { assertHuman, isCandidateType, Memory, MemoryError, type RecordInput } from './memory';
+import { assertHuman, CANDIDATE_TYPES, Memory, MemoryError, type RecordInput } from './memory';
 import { flat } from './summary';
 
 export const MAX_ITEMS = 5;
@@ -33,8 +33,11 @@ export class Capture {
 
   async context(actor: Person): Promise<ExtractorContext> {
     assertHuman(actor);
-    const entries = (await this.store.listEntries({ limit: 100 }))
-      .filter((e) => isCandidateType(e.type) && (e.status === 'active' || e.status === 'under_review')).slice(0, 40);
+    // Per type, so newer updates and workstreams cannot crowd the rest out. Sequential: the Worker has few connections.
+    const candidates: Entry[] = [];
+    for (const type of CANDIDATE_TYPES) candidates.push(...await this.store.listEntries({ type, limit: 40 }));
+    const entries = candidates.filter((e) => e.status === 'active' || e.status === 'under_review')
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()).slice(0, 40);
     const workstreams = (await this.store.listEntries({ type: 'workstream', limit: 100 }))
       .filter((w) => w.status !== 'done').slice(0, 20);
     return {
@@ -83,7 +86,7 @@ export class Capture {
         const byId = await find(tx, u.workstream_id);
         // shortcut: matches only the newest 100 workstreams, add a sourceRef filter to listEntries if teams outgrow that.
         const w = (byId?.type === 'workstream' ? byId : null)
-          ?? (branch ? (await tx.listEntries({ type: 'workstream', limit: 100 })).find((e) => e.sourceRef === branch) : null)
+          ?? (branch ? (await tx.listEntries({ type: 'workstream', limit: 100 })).find((e) => e.sourceRef === branch && e.status !== 'done') : null)
           ?? await memory.record(actor, { type: 'workstream', title: u.workstream_title ?? x.branch_hint ?? u.title, content: u.title,
             area: u.area, sourceRef: branch ?? undefined, sourceKind: 'claude_code' });
         const entry = await memory.record(actor, { type: 'update', title: u.title, content: u.content, area: u.area,
@@ -104,7 +107,9 @@ export class Capture {
       const entry = answer === 'record'
         ? await new Memory(tx).record(actor, { ...p.candidate, sourceKind: 'claude_code', sourceRef: p.sourceRef ?? undefined })
         : null;
-      await tx.insertCorrection({ personId: actor.id, verdict: VERDICT[answer], candidate: p.candidate });
+      const { type, title, area } = p.candidate;
+      await tx.insertCorrection({ personId: actor.id, verdict: VERDICT[answer],
+        candidate: answer === 'personal' ? { type, title, area, content: '' } : p.candidate });
       return { pending: await tx.answerPending(id, answer, new Date()), entry };
     });
   }

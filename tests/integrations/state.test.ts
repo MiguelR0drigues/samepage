@@ -35,6 +35,15 @@ it('readConfig returns null when missing, the parsed config when present', () =>
   expect(st.readConfig(home)).toEqual({ url: 'u', token: 't', folders: [], dailyLimit: 20, claudePath: null, claudeToken: null });
 });
 
+it('writeConfig keeps a stored dailyLimit, new installs get the default', () => {
+  const c = { url: 'u', token: 't', folders: ['/a'], claudePath: null, claudeToken: 'oat' };
+  st.writeConfig(home, c);
+  expect(st.readConfig(home)).toEqual({ ...c, dailyLimit: 20 });
+  fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify({ ...c, dailyLimit: 7 }));
+  st.writeConfig(home, { ...c, token: 't2' });
+  expect(st.readConfig(home)).toEqual({ ...c, token: 't2', dailyLimit: 7 });
+});
+
 it('takeLock is exclusive, reusable after release, and replaces a stale lock', () => {
   const release = st.takeLock(home, 's1', 1000)!;
   expect(release).toBeTypeOf('function');

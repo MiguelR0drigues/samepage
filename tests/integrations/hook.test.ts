@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, it } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -6,6 +6,13 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { handleHook } from '../../integrations/claude-code/lib/handle-hook.mjs';
 import { loadSession, saveSession, listSessions } from '../../integrations/claude-code/lib/state.mjs';
+
+// lets a test write the session file while handleHook is reading the transcript
+const race = vi.hoisted(() => ({ onRead: null as null | (() => void) }));
+vi.mock('../../integrations/claude-code/lib/transcript.mjs', async (orig) => {
+  const m = await orig<typeof import('../../integrations/claude-code/lib/transcript.mjs')>();
+  return { ...m, readTranscript: (f: string, from: number) => { race.onRead?.(); return m.readTranscript(f, from); } };
+});
 
 const NOW = 1_000_000;
 const EXTRACT = fileURLToPath(new URL('../../integrations/claude-code/extract.mjs', import.meta.url));
@@ -17,7 +24,7 @@ beforeEach(() => {
   cwd = path.join(home, 'company', 'web-app');
   fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify({ url: 'http://x', token: 't', folders: [path.join(home, 'company')] }));
 });
-afterEach(() => { fs.rmSync(home, { recursive: true, force: true }); });
+afterEach(() => { race.onRead = null; fs.rmSync(home, { recursive: true, force: true }); });
 
 const run = (event: string, input: object, env: Record<string, string> = {}) =>
   handleHook(event, { session_id: 's1', transcript_path: path.join(home, 't.jsonl'), cwd, ...input }, { home, env, now: NOW });
@@ -77,19 +84,35 @@ it('a notice is injected once as additionalContext', () => {
   expect(run('prompt', { prompt: 'hello' })).toEqual({});
 });
 
-it('stop spawns a mid pass only at 40 new messages', () => {
-  transcript(39);
+it('stop spawns a mid pass only at 15 new user messages', () => {
+  transcript(28);
   expect(run('stop', {})).toEqual({});
-  transcript(40);
+  transcript(29);
   expect(run('stop', {}).spawn).toEqual([EXTRACT, 's1', 'mid']);
   saveSession(home, 's1', { ...loadSession(home, 's1'), processedLine: 10 });
   expect(run('stop', {})).toEqual({});
 });
 
 it('stop counts from skipUntilLine when it is ahead', () => {
-  transcript(60);
-  saveSession(home, 's1', { ...loadSession(home, 's1'), skipUntilLine: 30 });
+  transcript(40);
+  saveSession(home, 's1', { ...loadSession(home, 's1'), skipUntilLine: 12 });
   expect(run('stop', {})).toEqual({});
+});
+
+it('a privacy command or a finished pass saved during a hook survives its save', () => {
+  transcript(4);
+  race.onRead = () => saveSession(home, 's1', { ...loadSession(home, 's1'), private: true, skipUntilLine: 3, processedLine: 4, notice: 'new' });
+  run('stop', {});
+  expect(loadSession(home, 's1')).toMatchObject({ private: true, skipUntilLine: 3, processedLine: 4, notice: 'new', lastActivity: NOW });
+});
+
+it('/private and /forget still block when the state cannot be saved', () => {
+  fs.writeFileSync(path.join(home, 'sessions'), 'not a folder');
+  for (const prompt of ['/private', '/forget']) {
+    expect(JSON.parse(run('prompt', { prompt }).stdout!)).toEqual({
+      decision: 'block', reason: 'SamePage: could not save this setting (state not writable); the conversation may still be captured.',
+    });
+  }
 });
 
 it('stop with a missing transcript spawns nothing', () => {

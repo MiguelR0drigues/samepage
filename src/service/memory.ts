@@ -17,7 +17,8 @@ const NOT_ACTIVE = 'This decision is no longer active.';
 const isTeam = (actor: Person, authors: string[], sourceKind: SourceKind) =>
   authors.length >= 2 || (sourceKind === 'meet' && actor.isSystem);
 
-export const isCandidateType = (t: EntryType): t is CandidateType => ['decision', 'principle', 'view', 'exploration'].includes(t);
+export const CANDIDATE_TYPES: CandidateType[] = ['decision', 'principle', 'view', 'exploration'];
+export const isCandidateType = (t: EntryType): t is CandidateType => (CANDIDATE_TYPES as EntryType[]).includes(t);
 
 export function assertHuman(actor: Person) {
   if (actor.isSystem) throw new MemoryError('A system actor cannot perform this action.');
@@ -103,10 +104,10 @@ export class Memory {
       if (e.type === 'proposal' && e.status === 'open' && e.targetId) {
         await tx.updateEntry(e.targetId, { status: 'active' }, actor.id);
       }
-      // Teaches the extractor what this person does not want captured.
+      // Teaches the extractor what this person does not want captured. Personal text does not stay on the server.
       if (reason && e.sourceKind === 'claude_code' && isCandidateType(e.type)) {
         await tx.insertCorrection({ personId: actor.id, verdict: reason,
-          candidate: { type: e.type, title: e.title, content: e.content, area: e.area } });
+          candidate: { type: e.type, title: e.title, content: reason === 'personal' ? '' : e.content, area: e.area } });
       }
     });
   }

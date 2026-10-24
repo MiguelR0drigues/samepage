@@ -25,6 +25,16 @@ export function readConfig(home) {
   };
 }
 
+/**
+ * Writes config.json, readable only by this user. A re-run keeps the stored dailyLimit.
+ * @param {string} home @param {Omit<Config, 'dailyLimit'>} c
+ */
+export function writeConfig(home, c) {
+  const file = path.join(home, 'config.json');
+  fs.writeFileSync(file, JSON.stringify({ ...c, dailyLimit: readConfig(home)?.dailyLimit ?? DEFAULT_DAILY_LIMIT }, null, 2), { mode: 0o600 });
+  if (process.platform !== 'win32') fs.chmodSync(file, 0o600);
+}
+
 /** @returns {SessionState} */
 const blankSession = () => ({
   transcriptPath: null, cwd: null, lastActivity: 0, processedLine: 0, processedAt: 0,

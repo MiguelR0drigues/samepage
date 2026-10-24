@@ -1,4 +1,4 @@
-export const MID_SESSION_EVERY = 40;
+export const MID_SESSION_EVERY = 15;
 export const MIN_USER_MESSAGES = 3;
 export const MIN_CHARS = 1500;
 export const MAX_EXCERPT_CHARS = 24000;
@@ -9,4 +9,3 @@ export const SWEEP_MAX_AGE_MS = 3 * 24 * 3600_000;
 export const CLAUDE_TIMEOUT_MS = 180_000;
 export const LOCK_STALE_MS = 10 * 60_000;
 export const MAX_ITEMS = 5;
-export const MAX_PENDING = 2;

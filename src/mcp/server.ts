@@ -125,7 +125,7 @@ export function buildMcpServer(store: Store, actor: Person, summary?: string): M
   }, () => run(async () => {
     const open = await store.listPending(actor.id);
     return open.length
-      ? open.map((p) => `[${p.id}] ${p.question}\n  ${p.candidate.type}: ${p.candidate.title} — ${flat(p.candidate.content, 200)}`).join('\n')
+      ? open.map((p) => `[${p.id}] ${flat(p.question, 200)}\n  ${p.candidate.type}: ${p.candidate.title} — ${flat(p.candidate.content, 200)}`).join('\n')
       : 'No pending questions.';
   }));
 

@@ -2,13 +2,13 @@
 // samepage-setup <token>: connects Claude Code to SamePage and turns on session capture.
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { claudeDir, samepageHome } from './lib/paths.mjs';
 import { mergeHooks, removeHooks } from './lib/settings.mjs';
-import { readConfig } from './lib/state.mjs';
-import { DEFAULT_DAILY_LIMIT } from './lib/limits.mjs';
+import { readConfig, writeConfig } from './lib/state.mjs';
 
 const DEFAULT_URL = 'https://samepage.scooli.workers.dev';
 const USAGE = 'Usage: samepage-setup <token> [--url <url>] [--folders "<a>;<b>"] [--claude-token <t>] [--uninstall]';
@@ -38,22 +38,52 @@ export function parseArgs(argv) {
 }
 
 const win = process.platform === 'win32';
-const readJsonObject = (/** @type {string} */ file) => {
+export const readJsonObject = (/** @type {string} */ file) => {
   if (!fs.existsSync(file)) return {};
   try {
-    const v = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const v = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '')); // editors on Windows may add a BOM
     if (v && typeof v === 'object' && !Array.isArray(v)) return v;
   } catch { /* falls through */ }
   throw new Fail(`${file} is not valid JSON. Fix it and run setup again.`);
 };
 
+/** @param {string} name @returns {string[]} */
+function which(name) {
+  try {
+    return (win ? execFileSync('where', [name], { encoding: 'utf8' }) : execFileSync('sh', ['-c', `command -v ${name}`], { encoding: 'utf8' }))
+      .split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  } catch { return []; }
+}
+
 /** @returns {string | null} */
 function findClaude() {
-  try {
-    const lines = (win ? execFileSync('where', ['claude'], { encoding: 'utf8' }) : execFileSync('sh', ['-c', 'command -v claude'], { encoding: 'utf8' }))
-      .split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-    return (win && lines.find((l) => /\.(exe|cmd|bat)$/i.test(l))) || lines[0] || null;
-  } catch { return null; }
+  const lines = which('claude');
+  return (win && lines.find((l) => /\.(exe|cmd|bat)$/i.test(l))) || lines[0] || null;
+}
+
+/**
+ * The node on PATH, so the hooks survive a Node upgrade that moves the binary; else this process's node.
+ * @param {(name: string) => string[]} [lookup] @param {string} [platform]
+ */
+export function findNode(lookup = which, platform = process.platform) {
+  const lines = lookup('node');
+  const p = (platform === 'win32' && lines.find((l) => /\.exe$/i.test(l))) || lines[0];
+  return p && fs.statSync(p, { throwIfNoEntry: false })?.isFile() ? p : process.execPath;
+}
+
+/**
+ * Company folders from a `;`-separated answer. Never the whole home folder or a drive root.
+ * @param {string} answer @param {string} [home]
+ * @returns {string[]}
+ */
+export function parseFolders(answer, home = os.homedir()) {
+  const folders = answer.split(';').map((f) => f.trim()).filter(Boolean).map((f) => path.resolve(f));
+  if (!folders.length) throw new Fail('No folders given.');
+  for (const f of folders) {
+    if (path.parse(f).root === f || path.relative(home, f) === '') throw new Fail(`Refusing ${f}: choose the folder that holds company work, not the whole home or drive.`);
+    if (!fs.existsSync(f)) throw new Fail(`Folder not found: ${f}`);
+  }
+  return folders;
 }
 
 // A .cmd/.bat binary needs a shell, which joins the args as text: quote them. Errors never carry the command line (it holds tokens).
@@ -113,9 +143,12 @@ async function install(args) {
   try { status = (await fetch(`${url}/summary`, { headers: { authorization: `Bearer ${token}` } })).status; } catch { throw new Fail(`Could not reach ${url}.`); }
   if (status !== 200) throw new Fail(`This token was rejected by ${url}.`);
 
-  const answer = args.folders ?? await ask(`Which folders hold company work? Capture runs only there (separate several with ;) [${process.cwd()}]: `);
-  const folders = (answer || process.cwd()).split(';').map((f) => f.trim()).filter(Boolean).map((f) => path.resolve(f));
-  for (const f of folders) if (!fs.existsSync(f)) throw new Fail(`Folder not found: ${f}`);
+  let answer = args.folders;
+  while (answer === null) {
+    const a = await ask('Which folders hold company work? Capture runs only there (separate several with ;): ');
+    if (a || !process.stdin.isTTY) answer = a;
+  }
+  const folders = parseFolders(answer);
 
   const settings = readJsonObject(settingsFile); // before anything is written
   let claudeToken = args.claudeToken ?? readConfig(home)?.claudeToken ?? null;
@@ -130,14 +163,12 @@ async function install(args) {
   fs.mkdirSync(home, { recursive: true });
   for (const f of ['hook.mjs', 'extract.mjs']) fs.copyFileSync(path.join(src, f), path.join(home, f));
   fs.cpSync(path.join(src, 'lib'), path.join(home, 'lib'), { recursive: true });
-  const configFile = path.join(home, 'config.json');
-  fs.writeFileSync(configFile, JSON.stringify({ url, token, folders, dailyLimit: DEFAULT_DAILY_LIMIT, claudePath: claude, claudeToken }, null, 2), { mode: 0o600 });
-  if (!win) fs.chmodSync(configFile, 0o600);
+  writeConfig(home, { url, token, folders, claudePath: claude, claudeToken });
 
   const backup = `${settingsFile}.samepage-backup`;
   if (fs.existsSync(settingsFile) && !fs.existsSync(backup)) fs.copyFileSync(settingsFile, backup);
   fs.mkdirSync(path.dirname(settingsFile), { recursive: true });
-  fs.writeFileSync(settingsFile, JSON.stringify(mergeHooks(settings, process.execPath, path.join(home, 'hook.mjs')), null, 2));
+  fs.writeFileSync(settingsFile, JSON.stringify(mergeHooks(settings, findNode(), path.join(home, 'hook.mjs')), null, 2));
 
   try { runClaude(claude, ['mcp', 'remove', 'samepage', '-s', 'user']); } catch { /* not registered yet */ }
   try {

@@ -21,27 +21,28 @@ export function handleHook(event, input, { home, env, now }) {
   if (!config || typeof id !== 'string' || !id || typeof cwd !== 'string' || !isCompanyFolder(cwd, config.folders)) return {};
 
   const s = loadSession(home, id);
-  s.transcriptPath = typeof input.transcript_path === 'string' ? input.transcript_path : s.transcriptPath;
-  s.cwd = cwd;
-  s.lastActivity = now;
+  const transcriptPath = typeof input.transcript_path === 'string' ? input.transcript_path : s.transcriptPath;
+  // only the fields this hook changes: another hook or a pass may save the session meanwhile
+  /** @type {Partial<import('./state.mjs').SessionState>} */ const patch = { transcriptPath, cwd, lastActivity: now };
   /** @type {{ stdout?: string, spawn?: string[] }} */ let result = {};
+  /** @type {string | null} */ let injected = null;
 
   if (event === 'prompt') {
     const prompt = typeof input.prompt === 'string' ? input.prompt.trim() : '';
     if (prompt === '/private') {
-      s.private = true;
+      patch.private = true;
       result = { stdout: block('SamePage: this conversation will not be captured.') };
     } else if (prompt === '/forget') {
-      try { s.skipUntilLine = s.transcriptPath ? readTranscript(s.transcriptPath, 0).endLine : 0; } catch { s.skipUntilLine = 0; }
+      try { patch.skipUntilLine = transcriptPath ? readTranscript(transcriptPath, 0).endLine : 0; } catch { patch.skipUntilLine = 0; }
       result = { stdout: block('SamePage: everything so far that was not captured yet will be skipped.') };
     } else if (s.notice) {
       result = { stdout: JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: s.notice } }) };
-      s.notice = null;
+      injected = s.notice;
     }
   } else if (event === 'stop') {
-    if (!s.private && s.transcriptPath) {
+    if (!s.private && transcriptPath) {
       try {
-        if (readTranscript(s.transcriptPath, Math.max(s.processedLine, s.skipUntilLine)).messages.length >= MID_SESSION_EVERY) result = { spawn: [EXTRACT, id, 'mid'] };
+        if (readTranscript(transcriptPath, Math.max(s.processedLine, s.skipUntilLine)).userCount >= MID_SESSION_EVERY) result = { spawn: [EXTRACT, id, 'mid'] };
       } catch { /* transcript not readable yet: try again on the next Stop */ }
     }
   } else if (event === 'session-end') {
@@ -50,6 +51,17 @@ export function handleHook(event, input, { home, env, now }) {
     result = { spawn: [EXTRACT, '--sweep', id] };
   }
 
-  saveSession(home, id, s);
+  const fresh = loadSession(home, id);
+  try {
+    saveSession(home, id, {
+      ...fresh, ...patch,
+      private: fresh.private || !!patch.private,
+      skipUntilLine: Math.max(fresh.skipUntilLine, patch.skipUntilLine ?? 0),
+      notice: injected !== null && fresh.notice === injected ? null : fresh.notice,
+    });
+  } catch (e) {
+    if (patch.private || patch.skipUntilLine !== undefined) return { stdout: block('SamePage: could not save this setting (state not writable); the conversation may still be captured.') };
+    throw e;
+  }
   return result;
 }

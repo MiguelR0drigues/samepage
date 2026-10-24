@@ -38,12 +38,13 @@ export async function runPass(id, mode, { home, config, env, fetch, runClaude, n
     // a final pass after earlier passes still goes to the model, for the session update
     const owesUpdate = mode === 'final' && s.notes.length > 0;
     if (!t.messages.length && !owesUpdate) return 'skipped';
-    if (mode === 'mid' && t.messages.length < MID_SESSION_EVERY) return 'skipped';
+    if (mode === 'mid' && t.userCount < MID_SESSION_EVERY) return 'skipped';
     if ((t.userCount < MIN_USER_MESSAGES || t.chars < MIN_CHARS) && !owesUpdate) {
       if (mode !== 'final') return 'skipped';
       save({ processedLine: t.endLine, processedAt: now });
       return 'done';
     }
+    if (!config.claudeToken) { log(home, `${tag}: no Claude token (run setup again)`); return 'skipped'; }
     if (usageToday(home, now) >= config.dailyLimit) { log(home, `${tag}: daily limit reached`); return 'skipped'; }
     addUsage(home, now);
 

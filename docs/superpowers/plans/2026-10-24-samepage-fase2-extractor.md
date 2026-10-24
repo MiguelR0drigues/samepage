@@ -43,7 +43,7 @@
 
 | Constant | Value |
 |---|---|
-| `MID_SESSION_EVERY` | 40 new text messages |
+| `MID_SESSION_EVERY` | 15 new user messages |
 | `MIN_USER_MESSAGES` | 3 |
 | `MIN_CHARS` | 1500 |
 | `MAX_EXCERPT_CHARS` | 24000 (newest messages kept) |
@@ -54,7 +54,7 @@
 | `CLAUDE_TIMEOUT_MS` | 180000 |
 | `LOCK_STALE_MS` | 10 min |
 | `MAX_ITEMS` | 5 per pass |
-| `MAX_PENDING` | 2 per pass |
+| `MAX_PENDING` | 2 per pass (server only, `src/service/capture.ts`) |
 
 - `claude -p` flags, exactly: `-p --model haiku --tools "" --strict-mcp-config --disable-slash-commands --no-session-persistence --settings {"disableAllHooks":true} --output-format json --json-schema <schema> --system-prompt-file <file>`. The prompt goes on stdin; cwd is `~/.samepage/work`; the env is sanitized, plus `SAMEPAGE_EXTRACTOR=1`.
 - **Hooks must never break or slow a session.** Every hook exits 0. It writes stdout only for the `/private` and `/forget` blocks and the pending notice. Real work is detached.

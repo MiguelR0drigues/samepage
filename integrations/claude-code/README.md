@@ -14,6 +14,8 @@ It asks which folders hold company work, then:
 - copies the capture client to `~/.samepage/` and writes `~/.samepage/config.json`;
 - runs `claude setup-token` so capture uses your own Claude subscription: paste the token it prints (hidden). A re-run keeps the stored one; `--claude-token <t>` skips the question.
 
+The hooks run the `node` found on your PATH at setup time. Re-run the setup command after moving or reinstalling Node.
+
 Open a new session: `/mcp` shows `samepage` connected, and your team summary (principles, recent decisions, what changed since your last session, open proposals) arrives with the server instructions at the start of each session.
 
 Undo everything (hooks, MCP connection, `~/.samepage`): `npx -y https://samepage.scooli.workers.dev/samepage-setup.tgz --uninstall`.
@@ -64,7 +66,7 @@ Commands are shown for bash and for PowerShell. In PowerShell use `curl.exe` (pl
    Prefix each with `DATABASE_URL="<direct string>"` in bash. Each command prints that person's setup command (with their token) once. Send it to them through a private channel.
    Lost or leaked token: `npm run person:rotate -- <id>` prints a new setup command and the old token stops working immediately.
 4. Log in and set the secret: `npx wrangler login`, then `npx wrangler secret put DATABASE_URL` (paste the pooled string).
-5. Deploy: `npm run deploy` (it first builds `public/samepage-setup.tgz`, the installer teammates run, which the Worker serves as a static asset). Wrangler prints the Worker URL (`https://samepage.<account>.workers.dev`). Set `SAMEPAGE_URL` to it when running `person:add` if it differs from the default. Current deployment: `https://samepage.scooli.workers.dev` (Scooli Cloudflare account).
+5. Deploy: `npm run deploy` (it first builds `public/samepage-setup.tgz`, the installer teammates run, which the Worker serves as a static asset). Maintainers: bump `version` in `integrations/claude-code/package.json` whenever the client changes, or `npx` may reuse a cached old tarball. Wrangler prints the Worker URL (`https://samepage.<account>.workers.dev`). Set `SAMEPAGE_URL` to it when running `person:add` if it differs from the default. Current deployment: `https://samepage.scooli.workers.dev` (Scooli Cloudflare account).
 6. Check it:
    - `curl https://<worker>/health` returns `ok` (PowerShell: `curl.exe https://<worker>/health`)
    - `curl -H "Authorization: Bearer <token>" https://<worker>/summary` returns the summary header (PowerShell: `curl.exe -H "Authorization: Bearer <token>" https://<worker>/summary`)

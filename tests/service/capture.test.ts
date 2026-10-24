@@ -117,6 +117,14 @@ describe('Capture.apply', () => {
     expect(await store.listEntries({ type: 'workstream' })).toHaveLength(1);
   });
 
+  it('the branch hint never attaches an update to a done workstream', async () => {
+    const r1 = await capture.apply(miguel, x({ branch_hint: 'web-app@main', update }));
+    await memory.setWorkstreamStatus(miguel, r1.workstream!, 'done');
+    const r2 = await capture.apply(miguel, x({ session_ref: 'claude_code:s2', branch_hint: 'web-app@main', update }));
+    expect(r2.workstream).not.toBe(r1.workstream);
+    expect(await store.getEntry(r2.workstream!)).toMatchObject({ status: 'in_progress', sourceRef: 'branch:web-app@main' });
+  });
+
   it('update with the id of a deleted workstream creates a new workstream', async () => {
     const w = await memory.record(miguel, decision({ type: 'workstream', title: 'Old' }));
     await memory.remove(miguel, w.id);
@@ -159,7 +167,9 @@ describe('Capture.answerPending', () => {
     const id = await ask();
     expect((await capture.answerPending(miguel, id, 'personal')).entry).toBeNull();
     expect(await store.listEntries({})).toEqual([]);
-    expect(await store.listCorrections('miguel', 10)).toMatchObject([{ verdict: 'personal' }]);
+    const [c] = await store.listCorrections('miguel', 10);
+    expect(c).toMatchObject({ verdict: 'personal' });
+    expect(c!.candidate).toEqual({ type: 'principle', title: 'Use Neon', area: 'infra', content: '' });
     expect(await store.listPending('miguel')).toEqual([]);
   });
 
@@ -193,6 +203,13 @@ describe('Capture.context', () => {
       content: `line one line two ${'x'.repeat(182)}`, authors: ['miguel'] }]);
     expect(c.workstreams).toEqual([{ id: w.workstream, status: 'in_progress', title: 'web-app@main', branch: 'web-app@main' }]);
     expect(c.corrections).toEqual([{ verdict: 'personal', type: 'decision', title: 'Use Neon' }]);
+  });
+
+  it('many newer updates and workstreams do not push decisions out of the context', async () => {
+    const d = await memory.record(miguel, decision());
+    const w = await memory.record(miguel, decision({ type: 'workstream', title: 'Busy' }));
+    for (let i = 0; i < 100; i++) await memory.record(miguel, { ...update, type: 'update', workstreamId: w.id });
+    expect((await capture.context(miguel)).entries.map((e) => e.id)).toEqual([d.id]);
   });
 
   it('system actor cannot read the context', async () => {

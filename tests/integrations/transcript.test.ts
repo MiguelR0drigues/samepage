@@ -31,6 +31,7 @@ function fixture(): string {
     user('/private'),
     user('/forget'),
     user('<system-reminder>only noise</system-reminder>'),
+    user('This session is being continued from a previous conversation. Summary: forgotten text', { isCompactSummary: true }),
   ];
   fs.writeFileSync(f, lines.join('\n') + '\n' + '{"type":"user","message":{"role":"us');
   return f;
@@ -43,7 +44,7 @@ it('keeps only real texts in order and stops before a truncated last line', () =
     { role: 'agent', text: 'an answer' },
     { role: 'user', text: 'second question' },
   ]);
-  expect(r.endLine).toBe(11);
+  expect(r.endLine).toBe(12);
   expect(r.userCount).toBe(2);
   expect(r.chars).toBe('first question'.length + 'an answer'.length + 'second question'.length);
   expect(r.paths).toEqual(['/w/web-app/src/a.ts']);
@@ -55,7 +56,7 @@ it('fromLine skips earlier lines', () => {
   const r = readTranscript(fixture(), 7);
   expect(r.messages).toEqual([{ role: 'user', text: 'second question' }]);
   expect(r.paths).toEqual([]);
-  expect(r.endLine).toBe(11);
+  expect(r.endLine).toBe(12);
 });
 
 it('a complete final line is counted', () => {

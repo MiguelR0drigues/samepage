@@ -42,7 +42,8 @@ export function readTranscript(file, fromLine) {
     }
     if (e?.gitBranch) gitBranch = e.gitBranch;
     if (e?.cwd) cwd = e.cwd;
-    if (e?.isSidechain) continue;
+    // a compaction summary restates the whole conversation, /forget-dropped parts included
+    if (e?.isSidechain || e?.isCompactSummary) continue;
     const content = e?.message?.content;
     if (e?.type === 'user' && !e.isMeta) {
       const text = clean(textOf(content));
@@ -81,7 +82,7 @@ export function branchHint(cwd, paths, gitBranch) {
     const dir = path.join(cwd, top);
     if (fs.existsSync(path.join(dir, '.git'))) {
       try {
-        const branch = execFileSync('git', ['-C', dir, 'rev-parse', '--abbrev-ref', 'HEAD'], { timeout: 2000, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+        const branch = execFileSync('git', ['-C', dir, 'rev-parse', '--abbrev-ref', 'HEAD'], { timeout: 2000, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true }).trim();
         if (branch) return `${top}@${branch}`;
       } catch { /* fall through to the cwd-based hint */ }
     }

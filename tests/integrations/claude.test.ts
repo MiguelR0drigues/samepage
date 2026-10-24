@@ -19,10 +19,11 @@ function fake(out: unknown, extra: Record<string, string> = {}) {
 }
 const logged = () => fs.readFileSync(path.join(dir, 'log'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
 
-it('sanitizeEnv strips CLAUDECODE, CLAUDE_CODE_*, ANTHROPIC_API_KEY, keeps PATH and CLAUDE_CONFIG_DIR, adds SAMEPAGE_EXTRACTOR and CLAUDE_CODE_OAUTH_TOKEN when given', () => {
-  const env = { PATH: '/bin', CLAUDECODE: '1', CLAUDE_CODE_ENTRYPOINT: 'cli', CLAUDE_CODE_OAUTH_TOKEN: 'old', ANTHROPIC_API_KEY: 'k', ANTHROPIC_BASE_URL: 'u', CLAUDE_CONFIG_DIR: '/c' };
-  expect(sanitizeEnv(env)).toEqual({ PATH: '/bin', CLAUDE_CONFIG_DIR: '/c', SAMEPAGE_EXTRACTOR: '1' });
-  expect(sanitizeEnv(env, 'oat')).toEqual({ PATH: '/bin', CLAUDE_CONFIG_DIR: '/c', SAMEPAGE_EXTRACTOR: '1', CLAUDE_CODE_OAUTH_TOKEN: 'oat' });
+it('sanitizeEnv strips CLAUDECODE, CLAUDE_CODE_*, ANTHROPIC_API_KEY, keeps PATH, CLAUDE_CONFIG_DIR and CLAUDE_CODE_GIT_BASH_PATH, adds SAMEPAGE_EXTRACTOR and CLAUDE_CODE_OAUTH_TOKEN when given', () => {
+  const env = { PATH: '/bin', CLAUDECODE: '1', CLAUDE_CODE_ENTRYPOINT: 'cli', CLAUDE_CODE_OAUTH_TOKEN: 'old', ANTHROPIC_API_KEY: 'k', ANTHROPIC_BASE_URL: 'u', CLAUDE_CONFIG_DIR: '/c', CLAUDE_CODE_GIT_BASH_PATH: 'D:/Git/bin/bash.exe' };
+  const kept = { PATH: '/bin', CLAUDE_CONFIG_DIR: '/c', CLAUDE_CODE_GIT_BASH_PATH: 'D:/Git/bin/bash.exe', SAMEPAGE_EXTRACTOR: '1' };
+  expect(sanitizeEnv(env)).toEqual(kept);
+  expect(sanitizeEnv(env, 'oat')).toEqual({ ...kept, CLAUDE_CODE_OAUTH_TOKEN: 'oat' });
 });
 
 it('claudeCommand prefers CLAUDE_CODE_EXECPATH when it is a claude binary', () => {
@@ -54,7 +55,9 @@ it('runClaude falls back to parsing result and writes the prompt to stdin', asyn
 });
 
 it('runClaude rejects on is_error, non-JSON and timeout', async () => {
-  await expect(runClaude(fake({ is_error: true, result: 'Not logged in' }, { FAKE_CLAUDE_EXIT: '1' }))).rejects.toThrow('Not logged in');
+  // the error names the subtype only: result may be model text, which must not reach the log
+  await expect(runClaude(fake({ is_error: true, subtype: 'error_during_execution', result: 'Not logged in' }, { FAKE_CLAUDE_EXIT: '1' }))).rejects.toThrow(/^claude error: error_during_execution$/);
+  await expect(runClaude(fake({ is_error: true, result: 'Not logged in' }))).rejects.toThrow(/^claude error: error$/);
   await expect(runClaude(fake('oops not json'))).rejects.toThrow(/not JSON/);
   await expect(runClaude(fake('', { FAKE_CLAUDE_EXIT: '1' }))).rejects.toThrow(/exited 1/);
   await expect(runClaude({ ...fake('', { FAKE_CLAUDE_SLEEP: '1' }), timeoutMs: 500 })).rejects.toThrow(/timed out/);

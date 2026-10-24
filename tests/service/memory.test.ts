@@ -102,8 +102,14 @@ describe('Memory.remove / correctText', () => {
     await memory.remove(miguel, e.id, 'personal');
     expect((await store.getEntry(e.id))?.deletedAt).not.toBeNull();
     expect(await store.listCorrections('miguel', 10)).toMatchObject([{
-      verdict: 'personal', candidate: { type: 'view', title: 'Use Neon', content: 'We use Neon.', area: 'infra' },
+      verdict: 'personal', candidate: { type: 'view', title: 'Use Neon', content: '', area: 'infra' },
     }]);
+  });
+
+  it('removing an auto-captured entry as not worth recording keeps its content in the correction', async () => {
+    const e = await memory.record(miguel, decision({ type: 'view', sourceKind: 'claude_code', sourceRef: 'claude_code:s1' }));
+    await memory.remove(miguel, e.id, 'not_worth_recording');
+    expect((await store.listCorrections('miguel', 10))[0]?.candidate.content).toBe('We use Neon.');
   });
 
   it('a reason on an explicit entry stores nothing', async () => {
