@@ -1,5 +1,10 @@
 <div align="center">
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/brand/symbol-reverse.svg">
+  <img src="docs/brand/symbol.svg" alt="SamePage logo" width="96">
+</picture>
+
 # SamePage
 
 **Shared team memory for AI agents.**

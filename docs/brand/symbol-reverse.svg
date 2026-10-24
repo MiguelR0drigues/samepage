@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" fill="none" stroke-width="12">
+  <title>SamePage</title>
+  <!-- 5 rows 18 apart, stroke 12, gap 6; arcs share centres with the inner bars' caps so every gap stays 6 -->
+  <g stroke="#F4F1EA">
+    <path d="M84 12H30A18 18 0 0 0 12 30M84 66A18 18 0 0 1 66 84H12"/>
+    <circle cx="84" cy="12" r="6" fill="#F4F1EA" stroke="none"/>
+    <circle cx="12" cy="84" r="6" fill="#F4F1EA" stroke="none"/>
+    <path d="M30 30H84M12 66H66" stroke-linecap="round"/>
+  </g>
+  <path d="M12 30A18 18 0 0 0 30 48H66A18 18 0 0 1 84 66" stroke="#FF6B4A"/>
+</svg>
