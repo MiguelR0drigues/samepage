@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 380 96" fill="none">
+  <title>SamePage</title>
+  <g stroke-width="12">
+    <g stroke="#14213D">
+      <path d="M84 12H30A18 18 0 0 0 12 30M84 66A18 18 0 0 1 66 84H12"/>
+      <circle cx="84" cy="12" r="6" fill="#14213D" stroke="none"/>
+      <circle cx="12" cy="84" r="6" fill="#14213D" stroke="none"/>
+      <path d="M30 30H84M12 66H66" stroke-linecap="round"/>
+    </g>
+    <path d="M12 30A18 18 0 0 0 30 48H66A18 18 0 0 1 84 66" stroke="#FF6B4A"/>
+  </g>
+  <!-- shortcut: live text renders in whatever font is installed; outline it to paths once the typeface is final -->
+  <text x="118" y="68" fill="#14213D" font-family="Inter, 'Segoe UI', system-ui, sans-serif" font-size="56" font-weight="600" letter-spacing="-1.5">SamePage</text>
+</svg>
