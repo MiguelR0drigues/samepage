@@ -7,9 +7,12 @@ import { Memory } from '../service/memory';
 import type { Store } from '../storage/store';
 import { readSession, redeemLink, SESSION_TTL_S, sessionToken } from './auth';
 import { message } from './html';
+import { homePage } from './pages';
 
 export type DashVars = { store: Store; memory: Memory; person: Person; people: Person[] };
 
+const VISIT_TTL_S = 1800;
+const FIRST_VISIT_MS = 7 * 86_400_000;
 const EXPIRED = 'This sign-in link has expired or was already used. Ask your agent to open the dashboard again.';
 const SIGN_IN = 'Sign in by asking your agent to open the dashboard (open_dashboard tool).';
 
@@ -46,7 +49,25 @@ export function dashboardRoutes(getStore: (env: Env) => Store) {
     await next();
   });
 
-  app.get('/', (c) => message(200, c.get('person').name));
+  app.get('/', async (c) => {
+    const [store, person] = [c.get('store'), c.get('person')];
+    const now = new Date();
+    // A visit = Home without a live sp_visit: the cookie carries its cutoff; refreshes reuse it.
+    const stored = new Date(getCookie(c, 'sp_visit') ?? NaN);
+    const resumed = !Number.isNaN(stored.getTime());
+    const cutoff = resumed ? stored : person.dashboardSeenAt ?? new Date(now.getTime() - FIRST_VISIT_MS);
+    if (!resumed) await store.touchDashboardSeen(person.id, now);
+    setCookie(c, 'sp_visit', cutoff.toISOString(), { httpOnly: true, path: '/dashboard', maxAge: VISIT_TTL_S });
+    const q = (c.req.query('q') ?? '').trim();
+    // Sequential: each read takes a pooled connection, and the Worker has few.
+    const changes = await store.changesSince(cutoff, person.id);
+    const results = q ? await store.search(q, { limit: 20 }) : null;
+    const timeline = await store.listEntries({ type: 'decision', limit: 20 });
+    return c.html(await homePage({ person, people: c.get('people'), changes, q, results, timeline }));
+  });
+
+  // Keep last: unknown dashboard paths answer here instead of falling through to the bearer middleware.
+  app.all('*', () => message(404, 'Not found.'));
 
   return app;
 }
