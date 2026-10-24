@@ -12,7 +12,8 @@
     "db:import": "tsx scripts/import.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "deploy": "wrangler deploy"
+    "build:setup": "node scripts/build-setup.mjs",
+    "deploy": "npm run build:setup && wrangler deploy"
   },
   "dependencies": {
     "@modelcontextprotocol/client": "2.4.0",

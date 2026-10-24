@@ -4,9 +4,8 @@ import { PostgresStore } from '../../src/storage/postgres/store';
 import { sha256Hex } from '../../src/http/app';
 import { createPerson, setupCommand } from '../../scripts/add-person';
 
-it('setupCommand is a one-line user-scope claude mcp add with the token', () => {
-  expect(setupCommand('abc', 'https://sp.example.dev')).toBe(
-    'claude mcp add --scope user --transport http samepage https://sp.example.dev/mcp --header "Authorization: Bearer abc"');
+it('setupCommand is one npx line with the tarball URL and the token', () => {
+  expect(setupCommand('abc', 'https://x')).toBe('npx -y https://x/samepage-setup.tgz abc');
 });
 
 it('createPerson returns a token whose hash authenticates', async () => {
