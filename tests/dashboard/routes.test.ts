@@ -200,11 +200,20 @@ describe('decision page', () => {
     expect(res.headers.get('location')).toBe(`/dashboard/workstreams/${w.id}`);
   });
 
+  it('a deleted predecessor shows (deleted) and not its title', async () => {
+    const a = await new Memory(store).record(miguel, { ...decision('Old secret title'), ...both });
+    const { entry: b } = await new Memory(store).supersede(miguel, a.id, { ...decision('Per-use pricing'), ...both });
+    await new Memory(store).remove(miguel, a.id);
+    const body = await (await get(app, `/dashboard/entries/${b.id}`, await signIn(app, store, 'miguel'))).text();
+    expect(body).toContain('(deleted)');
+    expect(body).not.toContain('Old secret title');
+  });
+
   it('unknown, malformed and deleted ids are 404', async () => {
     const session = await signIn(app, store, 'miguel');
     const e = await new Memory(store).record(miguel, decision('Gone'));
     await new Memory(store).remove(miguel, e.id);
-    for (const id of ['abc', crypto.randomUUID(), e.id]) {
+    for (const id of ['abc', 'a'.repeat(36), crypto.randomUUID(), e.id]) {
       const res = await get(app, `/dashboard/entries/${id}`, session);
       expect(res.status).toBe(404);
     }
@@ -248,8 +257,16 @@ describe('proposals', () => {
   });
 
   it('a bad id is 404', async () => {
-    const res = await post(app, '/dashboard/proposals/abc/accept', await signIn(app, store, 'miguel'), {});
-    expect(res.status).toBe(404);
+    const session = await signIn(app, store, 'miguel');
+    for (const id of ['abc', 'a'.repeat(36)]) expect((await post(app, `/dashboard/proposals/${id}/accept`, session, {})).status).toBe(404);
+  });
+
+  it('a proposal whose target was deleted shows (deleted), not the title', async () => {
+    const { a } = await propose();
+    await store.updateEntry(a.id, { deletedAt: new Date(), deletedBy: 'miguel' }, 'miguel');
+    const body = await (await get(app, '/dashboard/proposals', await signIn(app, store, 'miguel'))).text();
+    expect(body).toContain('Revises: (deleted)');
+    expect(body).not.toContain('Per-seat pricing');
   });
 
   it('cross-site POST is refused', async () => {

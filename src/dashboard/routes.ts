@@ -11,7 +11,7 @@ import { entryPage, homePage, proposalsPage } from './pages';
 
 export type DashVars = { store: Store; memory: Memory; person: Person; people: Person[] };
 
-const ID = /^[0-9a-f-]{36}$/i;
+export const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const HISTORY_MAX = 10;
 const VISIT_TTL_S = 1800;
 const FIRST_VISIT_MS = 7 * 86_400_000;
@@ -100,10 +100,11 @@ export function dashboardRoutes(getStore: (env: Env) => Store) {
 
   app.get('/proposals', async (c) => {
     const store = c.get('store');
-    const items: { proposal: Entry; target: Entry | null }[] = [];
-    for (const proposal of await store.listEntries({ type: 'proposal', status: 'open', limit: 50 })) {
-      items.push({ proposal, target: proposal.targetId ? await store.getEntry(proposal.targetId) : null });
-    }
+    const proposals = await store.listEntries({ type: 'proposal', status: 'open', limit: 50 });
+    const ids = [...new Set(proposals.flatMap((p) => p.targetId ?? []))];
+    // One read for all targets; a deleted target is absent from the result.
+    const targets = new Map((ids.length ? await store.listEntries({ ids, limit: ids.length }) : []).map((e) => [e.id, e]));
+    const items = proposals.map((proposal) => ({ proposal, target: targets.get(proposal.targetId ?? '') ?? null }));
     return c.html(await proposalsPage({ person: c.get('person'), people: c.get('people'), items }));
   });
 

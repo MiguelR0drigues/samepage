@@ -90,6 +90,7 @@ export class PostgresStore implements Store {
         f.workstreamId ? eq(entries.workstreamId, f.workstreamId) : undefined,
         f.supersedesId ? eq(entries.supersedesId, f.supersedesId) : undefined,
         f.targetId ? eq(entries.targetId, f.targetId) : undefined,
+        f.ids ? inArray(entries.id, f.ids) : undefined,
       ))
       .orderBy(desc(entries.createdAt)).limit(f.limit ?? DEFAULT_LIMIT);
     return this.withAuthors(rows);

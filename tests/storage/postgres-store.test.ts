@@ -152,6 +152,16 @@ describe('PostgresStore', () => {
     expect((await store.listEntries({ targetId: target.id })).map((e) => e.id)).toEqual([t.id]);
   });
 
+  it('listEntries filters by ids, skipping deleted ones', async () => {
+    const a = await store.insertEntry(base({ title: 'a' }));
+    const b = await store.insertEntry(base({ title: 'b' }));
+    const c = await store.insertEntry(base({ title: 'c' }));
+    await store.updateEntry(c.id, { deletedAt: new Date(), deletedBy: 'miguel' }, 'miguel');
+    expect((await store.listEntries({ ids: [a.id, c.id] })).map((e) => e.id)).toEqual([a.id]);
+    expect((await store.listEntries({ ids: [a.id, b.id] })).map((e) => e.id).sort()).toEqual([a.id, b.id].sort());
+    expect(await store.listEntries({ ids: [] })).toEqual([]);
+  });
+
   it('moveUpdates reassigns updates without touching updatedAt', async () => {
     const a = await store.insertEntry(base({ type: 'workstream', status: 'in_progress', title: 'A' }));
     const b = await store.insertEntry(base({ type: 'workstream', status: 'in_progress', title: 'B' }));
