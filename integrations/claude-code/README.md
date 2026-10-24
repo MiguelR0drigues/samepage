@@ -2,15 +2,38 @@
 
 ## Join (each teammate, one command)
 
-Ask the admin for your personal setup command (printed by `npm run person:add`) and paste it into any terminal:
+You need Node 22 or newer and Claude Code installed. Ask the admin for your personal setup command (printed by `npm run person:add`) and paste it into any terminal:
 
 ```
-claude mcp add --scope user --transport http samepage https://samepage.scooli.workers.dev/mcp --header "Authorization: Bearer <your token>"
+npx -y https://samepage.scooli.workers.dev/samepage-setup.tgz <your token>
 ```
 
-That is all. It works in every folder (including a parent folder with several repos) and in the Claude desktop app. Open a new session: `/mcp` shows `samepage` connected, and your team summary (principles, recent decisions, what changed since your last session, open proposals) arrives with the server instructions at the start of each session.
+It asks which folders hold company work, then:
+- connects the SamePage MCP server to Claude Code (every folder, desktop app included);
+- adds the capture hooks to `~/.claude/settings.json` (first install keeps a `settings.json.samepage-backup`);
+- copies the capture client to `~/.samepage/` and writes `~/.samepage/config.json`;
+- runs `claude setup-token` so capture uses your own Claude subscription: paste the token it prints (hidden). A re-run keeps the stored one; `--claude-token <t>` skips the question.
 
-To disconnect: `claude mcp remove samepage -s user`.
+The hooks run the `node` found on your PATH at setup time. Re-run the setup command after moving or reinstalling Node.
+
+Open a new session: `/mcp` shows `samepage` connected, and your team summary (principles, recent decisions, what changed since your last session, open proposals) arrives with the server instructions at the start of each session.
+
+Undo everything (hooks, MCP connection, `~/.samepage`): `npx -y https://samepage.scooli.workers.dev/samepage-setup.tgz --uninstall`.
+
+## What gets captured
+
+Capture runs only in the folders you chose (and their subfolders). When a session ends, or has been idle for a while, a local `claude -p` pass reads the conversation and keeps only what the team would want to know later. The bar is high, so most sessions produce nothing.
+- What it finds is sent to SamePage as entries. Anything it is unsure about becomes a pending question, which Claude puts to you on your next prompt.
+- **The conversation never leaves your machine; only the extracted entries are sent.**
+- Type `/private` in a session and that session is never processed.
+- Type `/forget` and everything up to now that was not yet captured is dropped.
+- Entries can be deleted with a reason (`delete_entry`).
+- The desktop app shows these as "a hook blocked your prompt": that is expected, nothing reached Claude.
+- A session keeps the SamePage tools it had when it opened; after an update, start a new session to get new tools.
+
+Files, all under `~/.samepage/` (override with `SAMEPAGE_HOME`):
+- `capture.log`: one line per pass or failure (never conversation text); look here when nothing shows up.
+- `config.json`: `folders` (where capture runs) and `dailyLimit` (passes per day, default 20) are plain values you can edit; changes apply to the next session. It also holds your tokens, so keep it private.
 
 ## Dashboard (optional)
 
@@ -53,7 +76,7 @@ Commands are shown for bash and for PowerShell. In PowerShell use `curl.exe` (pl
    Prefix each with `DATABASE_URL="<direct string>"` in bash. Each command prints that person's setup command (with their token) once. Send it to them through a private channel.
    Lost or leaked token: `npm run person:rotate -- <id>` prints a new setup command and the old token stops working immediately. If the token may have been used, also set a new `DASHBOARD_SECRET` (this signs everyone out of the dashboard).
 4. Log in and set the secrets: `npx wrangler login`, then `npx wrangler secret put DATABASE_URL` (paste the pooled string) and `npx wrangler secret put DASHBOARD_SECRET` (paste a long random value, e.g. from `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`; it signs dashboard links and sessions). For `wrangler dev`, put `DASHBOARD_SECRET=dev` in `.dev.vars`.
-5. Deploy: `npm run deploy`. Wrangler prints the Worker URL (`https://samepage.<account>.workers.dev`). Set `SAMEPAGE_URL` to it when running `person:add` if it differs from the default. Current deployment: `https://samepage.scooli.workers.dev` (Scooli Cloudflare account).
+5. Deploy: `npm run deploy` (it first builds `public/samepage-setup.tgz`, the installer teammates run, which the Worker serves as a static asset). Maintainers: bump `version` in `integrations/claude-code/package.json` whenever the client changes, or `npx` may reuse a cached old tarball. Wrangler prints the Worker URL (`https://samepage.<account>.workers.dev`). Set `SAMEPAGE_URL` to it when running `person:add` if it differs from the default. Current deployment: `https://samepage.scooli.workers.dev` (Scooli Cloudflare account).
 6. Check it:
    - `curl https://<worker>/health` returns `ok` (PowerShell: `curl.exe https://<worker>/health`)
    - `curl -H "Authorization: Bearer <token>" https://<worker>/summary` returns the summary header (PowerShell: `curl.exe -H "Authorization: Bearer <token>" https://<worker>/summary`)

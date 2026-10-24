@@ -81,12 +81,12 @@ describe('MCP transport', () => {
 });
 
 describe('MCP tools', () => {
-  it('lists the 15 tools', async () => {
+  it('lists the 17 tools', async () => {
     const { tools } = await (await connect('t-miguel')).listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
-      'accept_proposal', 'correct_text', 'delete_entry', 'list_decisions', 'list_team', 'list_workstreams',
-      'merge_workstreams', 'open_dashboard', 'propose_revision', 'record', 'reject_proposal', 'rename_workstream', 'search_context',
-      'set_workstream_status', 'supersede_decision',
+      'accept_proposal', 'answer_pending', 'correct_text', 'delete_entry', 'list_decisions', 'list_team', 'list_workstreams',
+      'merge_workstreams', 'open_dashboard', 'pending', 'propose_revision', 'record', 'reject_proposal', 'rename_workstream',
+      'search_context', 'set_workstream_status', 'supersede_decision',
     ]);
   });
 
@@ -100,6 +100,46 @@ describe('MCP tools', () => {
     const res = await (await connect('t-miguel', { DATABASE_URL: '' })).callTool({ name: 'open_dashboard', arguments: {} });
     expect(res.isError).toBe(true);
     expect(text(res)).toContain('not configured');
+  });
+
+  it('pending then answer_pending records the candidate', async () => {
+    const candidate = { type: 'view' as const, title: 'Pricing view', content: 'Seats are better.', area: 'pricing' };
+    const p = await store.insertPending({ personId: 'miguel', candidate, question: 'Is this about the company?', sourceRef: 's1' });
+    const client = await connect('t-miguel');
+    expect(text(await client.callTool({ name: 'pending', arguments: {} })))
+      .toBe(`[${p.id}] Is this about the company?\n  view: Pricing view — Seats are better.`);
+    const res = await client.callTool({ name: 'answer_pending', arguments: { id: p.id, answer: 'record' } });
+    const [e] = await store.listEntries({});
+    expect(text(res)).toBe(`Recorded ${e!.id}`);
+    expect(e).toMatchObject({ title: 'Pricing view', sourceKind: 'claude_code', sourceRef: 's1' });
+    expect(text(await client.callTool({ name: 'pending', arguments: {} }))).toBe('No pending questions.');
+    expect((await client.callTool({ name: 'answer_pending', arguments: { id: p.id, answer: 'skip' } })).isError).toBe(true);
+  });
+
+  it('pending caps the question at 300 and answer_pending can record it as another type', async () => {
+    const candidate = { type: 'view' as const, title: 'Pricing view', content: 'Seats are better.', area: 'pricing' };
+    const p = await store.insertPending({ personId: 'miguel', candidate, question: 'q'.repeat(400), sourceRef: null });
+    const client = await connect('t-miguel');
+    expect(text(await client.callTool({ name: 'pending', arguments: {} }))).toBe(`[${p.id}] ${'q'.repeat(300)}\n  view: Pricing view — Seats are better.`);
+    await client.callTool({ name: 'answer_pending', arguments: { id: p.id, answer: 'record', type: 'decision' } });
+    expect(await store.listEntries({})).toMatchObject([{ type: 'decision', title: 'Pricing view' }]);
+  });
+
+  it('answer_pending personal or skip records nothing', async () => {
+    const candidate = { type: 'view' as const, title: 'Lunch', content: 'Pizza.', area: 'life' };
+    const p = await store.insertPending({ personId: 'miguel', candidate, question: 'Q?', sourceRef: null });
+    const res = await (await connect('t-miguel')).callTool({ name: 'answer_pending', arguments: { id: p.id, answer: 'personal' } });
+    expect(text(res)).toBe('Noted: not recorded.');
+    expect(await store.listEntries({})).toEqual([]);
+    expect((await store.listCorrections('miguel', 5))[0]!.verdict).toBe('personal');
+  });
+
+  it('delete_entry with reason stores a correction', async () => {
+    const client = await connect('t-miguel');
+    const id = text(await client.callTool({ name: 'record', arguments: { ...rec, type: 'view', source: 'claude_code' } })).replace('Recorded ', '');
+    await client.callTool({ name: 'delete_entry', arguments: { id, reason: 'not_worth_recording' } });
+    const [c] = await store.listCorrections('miguel', 5);
+    expect(c).toMatchObject({ verdict: 'not_worth_recording', candidate: { title: 'Per-seat pricing' } });
   });
 
   it('records then finds with search_context', async () => {
@@ -179,6 +219,64 @@ describe('GET /summary', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('text/plain');
     expect(await res.text()).toContain('# Team memory (SamePage)');
+  });
+});
+
+describe('/extractor', () => {
+  const headers = { Authorization: 'Bearer t-miguel', 'Content-Type': 'application/json' };
+  const item = { type: 'view', title: 'Seats win', content: 'Per-seat is simpler.', area: 'pricing', certainty: 'high', relation: 'new' };
+  const apply = (body: unknown) => app.request('/extractor/apply', { method: 'POST', headers, body: JSON.stringify(body) });
+
+  it('/extractor/context requires a token and returns people and entries', async () => {
+    expect((await app.request('/extractor/context')).status).toBe(401);
+    await (await connect('t-miguel')).callTool({ name: 'record', arguments: rec });
+    const res = await app.request('/extractor/context', { headers });
+    const ctx = (await res.json()) as { person: string; people: { id: string }[]; entries: { title: string }[] };
+    expect(res.status).toBe(200);
+    expect(ctx.person).toBe('miguel');
+    expect(ctx.people.map((p) => p.id).sort()).toEqual(['joao', 'miguel']);
+    expect(ctx.entries.map((e) => e.title)).toEqual(['Per-seat pricing']);
+  });
+
+  it('/extractor/apply records a high item and returns ids', async () => {
+    const res = await apply({ session_ref: 's1', items: [item] });
+    const r = (await res.json()) as { recorded: string[] };
+    expect(res.status).toBe(200);
+    const [e] = await store.listEntries({});
+    expect(r.recorded).toEqual([e!.id]);
+    expect(e).toMatchObject({ sourceKind: 'claude_code', sourceRef: 's1', recordedBy: 'miguel' });
+  });
+
+  it('/extractor/apply returns pending ids with their questions', async () => {
+    const r = (await (await apply({ session_ref: 's1', items: [{ ...item, certainty: 'medium', ask: 'Is it?' }] })).json()) as { pending: { id: string; question: string }[] };
+    const [p] = await store.listPending('miguel');
+    expect(r.pending).toEqual([{ id: p!.id, question: p!.question }]);
+    expect(p!.question).toContain('Is it? — view: "Seats win"');
+  });
+
+  it('/extractor/apply rejects a malformed body with 400', async () => {
+    for (const body of [null, {}, { session_ref: 's1', items: Array(21).fill(item) }, { session_ref: 's1', items: [{ ...item, title: 'x'.repeat(4001) }] }]) {
+      const res = await apply(body);
+      expect(res.status).toBe(400);
+      expect(typeof ((await res.json()) as { error: string }).error).toBe('string');
+    }
+    expect((await app.request('/extractor/apply', { method: 'POST', headers, body: '{' })).status).toBe(400);
+  });
+
+  it('/extractor/apply strips unknown keys and rejects bad enums with 400', async () => {
+    const res = await apply({ session_ref: 's1', items: [{ ...item, workstream_id: 'x', consensus: 'unanimous' }] });
+    expect(res.status).toBe(200);
+    expect(await store.listEntries({})).toHaveLength(1);
+    for (const bad of [{ type: 'update' }, { certainty: 'sure' }, { relation: 'replaces' }]) {
+      expect((await apply({ session_ref: 's1', items: [{ ...item, ...bad }] })).status).toBe(400);
+    }
+    expect(await store.listEntries({})).toHaveLength(1);
+  });
+
+  it('a system actor gets 400, not 500', async () => {
+    await store.addPerson({ id: 'meet', name: 'Meet', isSystem: true }, await sha256Hex('t-meet'));
+    const res = await app.request('/extractor/context', { headers: { Authorization: 'Bearer t-meet' } });
+    expect(res.status).toBe(400);
   });
 });
 

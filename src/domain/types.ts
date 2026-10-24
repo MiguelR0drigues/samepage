@@ -16,4 +16,16 @@ export interface Entry {
 }
 export type NewEntry = Omit<Entry, 'id' | 'createdAt' | 'updatedAt' | 'updatedBy' | 'deletedAt' | 'deletedBy'>;
 export interface Change { kind: 'new' | 'changed' | 'removed'; entry: Entry }
-export interface Snapshot { version: 1; people: (Person & { tokenHash: string; dashboardNonce?: string | null })[]; entries: Entry[] }
+export type CandidateType = 'decision' | 'principle' | 'view' | 'exploration';
+export interface Candidate { type: CandidateType; title: string; content: string; area: string; authors?: string[]; question?: string }
+export type PendingAnswer = 'record' | 'personal' | 'skip';
+export interface Pending {
+  id: string; personId: string; candidate: Candidate; question: string; sourceRef: string | null;
+  status: 'open' | 'answered'; answer: PendingAnswer | null; createdAt: Date; answeredAt: Date | null;
+}
+export type CorrectionVerdict = 'company' | 'personal' | 'not_worth_recording';
+export interface Correction { id: string; personId: string; verdict: CorrectionVerdict; candidate: Candidate; createdAt: Date }
+// pending/corrections are optional so Phase 1 exports still import.
+export interface Snapshot {
+  version: 1; people: (Person & { tokenHash: string; dashboardNonce?: string | null })[]; entries: Entry[]; pending?: Pending[]; corrections?: Correction[];
+}

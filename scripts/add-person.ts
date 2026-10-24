@@ -5,9 +5,9 @@ import { isMain, runCli } from './db';
 
 export const newToken = () => randomBytes(32).toString('hex');
 
-// The one line a teammate pastes to connect Claude Code (any folder, desktop app included).
+// The one line a teammate pastes: connects Claude Code (MCP, any folder) and turns on session capture.
 export const setupCommand = (token: string, url = process.env.SAMEPAGE_URL ?? 'https://samepage.scooli.workers.dev') =>
-  `claude mcp add --scope user --transport http samepage ${url}/mcp --header "Authorization: Bearer ${token}"`;
+  `npx -y ${url}/samepage-setup.tgz ${token}`;
 
 export async function createPerson(store: Store, p: { id: string; name: string; isSystem: boolean }) {
   const token = newToken();

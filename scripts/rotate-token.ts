@@ -19,7 +19,7 @@ if (isMain(import.meta.url)) {
   } else {
     await runCli(async (store) => {
       const { person, token } = await rotateToken(store, id);
-      console.log(`New token for ${person.id} (${person.name}); the old one no longer works. Send them this setup command privately (shown once; run \`claude mcp remove samepage -s user\` first if already set up):\n${setupCommand(token)}`);
+      console.log(`New token for ${person.id} (${person.name}); the old one no longer works. Send them this setup command privately (shown once; running it again replaces their previous setup):\n${setupCommand(token)}`);
     });
   }
 }

@@ -2,7 +2,7 @@ import type { Person } from '../domain/types';
 import type { Store } from '../storage/store';
 
 const MAX_CHARS = 2000;
-const flat = (s: string, max = Infinity) => s.replace(/\s+/g, ' ').trim().slice(0, max).trim();
+export const flat = (s: string, max = Infinity) => s.replace(/\s+/g, ' ').trim().slice(0, max).trim();
 const MAX_CHANGES = 8;
 
 export async function sessionSummary(store: Store, person: Person, now: Date): Promise<string> {
@@ -21,6 +21,8 @@ export async function sessionSummary(store: Store, person: Person, now: Date): P
     proposalLines.push(`- [${p.id}] ${flat(p.title)} → revises "${flat(target?.title ?? 'unknown decision')}"`);
   }
 
+  const pending = await store.listPending(person.id, 3);
+
   // Third element: how many items exist in total, so "…and N more" stays right as lines get dropped.
   const sections: [string, string[], number?][] = [
     ['Principles', principles.map((e) => `- ${flat(e.title)}: ${flat(e.content, 200)}`)],
@@ -30,6 +32,7 @@ export async function sessionSummary(store: Store, person: Person, now: Date): P
       return `- ${c.kind}: ${flat(c.entry.title)} (by ${c.kind === 'new' ? c.entry.recordedBy : c.entry.updatedBy})`;
     }), changes.length],
     ['Open proposals', proposalLines],
+    ['Pending for you', pending.map((p) => `- [${p.id}] ${flat(p.question, 300)}`)],
   ];
 
   const render = () => [

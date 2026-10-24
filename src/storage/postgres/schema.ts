@@ -1,5 +1,5 @@
 import { boolean, jsonb, pgTable, primaryKey, text, timestamp, uuid, type AnyPgColumn } from 'drizzle-orm/pg-core';
-import type { Consensus, EntryStatus, EntryType, Position, SourceKind } from '../../domain/types';
+import type { Candidate, Consensus, CorrectionVerdict, EntryStatus, EntryType, PendingAnswer, Position, SourceKind } from '../../domain/types';
 
 export const people = pgTable('people', {
   id: text('id').primaryKey(),
@@ -40,3 +40,23 @@ export const entryAuthors = pgTable('entry_authors', {
   entryId: uuid('entry_id').notNull().references(() => entries.id),
   personId: text('person_id').notNull().references(() => people.id),
 }, (t) => [primaryKey({ columns: [t.entryId, t.personId] })]);
+
+export const pending = pgTable('pending', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  personId: text('person_id').notNull().references(() => people.id),
+  candidate: jsonb('candidate').$type<Candidate>().notNull(),
+  question: text('question').notNull(),
+  sourceRef: text('source_ref'),
+  status: text('status').$type<'open' | 'answered'>().notNull().default('open'),
+  answer: text('answer').$type<PendingAnswer>(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  answeredAt: timestamp('answered_at', { withTimezone: true }),
+});
+
+export const corrections = pgTable('corrections', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  personId: text('person_id').notNull().references(() => people.id),
+  verdict: text('verdict').$type<CorrectionVerdict>().notNull(),
+  candidate: jsonb('candidate').$type<Candidate>().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
