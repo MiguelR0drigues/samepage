@@ -1,12 +1,14 @@
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/server';
 import { Hono } from 'hono';
+import { issueLink } from '../dashboard/auth';
+import { dashboardRoutes } from '../dashboard/routes';
 import type { Person } from '../domain/types';
 import { buildMcpServer } from '../mcp/server';
 import { sessionSummary } from '../service/summary';
 import type { Store } from '../storage/store';
 import { extractorRoutes } from './extractor';
 
-export interface Env { DATABASE_URL: string }
+export interface Env { DATABASE_URL: string; DASHBOARD_SECRET?: string }
 
 export async function sha256Hex(s: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
@@ -17,6 +19,8 @@ export function createApp(getStore: (env: Env) => Store) {
   const app = new Hono<{ Bindings: Env; Variables: { person: Person; store: Store } }>();
 
   app.get('/health', (c) => c.text('ok'));
+  // Signs in with its own cookie, so it sits before the bearer middleware.
+  app.route('/dashboard', dashboardRoutes(getStore));
 
   app.use('*', async (c, next) => {
     const token = /^Bearer (.+)$/.exec(c.req.header('Authorization') ?? '')?.[1];
@@ -40,7 +44,9 @@ export function createApp(getStore: (env: Env) => Store) {
     const body: unknown = await c.req.raw.clone().json().catch(() => null);
     const isInit = (Array.isArray(body) ? body : [body]).some((m) => (m as { method?: string } | null)?.method === 'initialize');
     const summary = isInit ? await sessionSummary(c.get('store'), c.get('person'), new Date()) : undefined;
-    await buildMcpServer(c.get('store'), c.get('person'), summary).connect(transport);
+    const [store, person] = [c.get('store'), c.get('person')];
+    const openDashboard = () => issueLink(store, person, new URL(c.req.url).origin, c.env.DASHBOARD_SECRET);
+    await buildMcpServer(store, person, summary, openDashboard).connect(transport);
     // JSON (not SSE) so the response is complete when handleRequest resolves; the Worker closes its DB pool right after.
     return transport.handleRequest(c.req.raw);
   });

@@ -57,7 +57,7 @@ async function run(fn: () => Promise<string>) {
 
 const list = (entries: Entry[]) => (entries.length ? entries.map(formatEntry).join('\n\n') : 'No results.');
 
-export function buildMcpServer(store: Store, actor: Person, summary?: string): McpServer {
+export function buildMcpServer(store: Store, actor: Person, summary: string | undefined, openDashboard: () => Promise<string>): McpServer {
   const memory = new Memory(store);
   const instructions = summary ? `${INSTRUCTIONS}\n\n${summary}` : INSTRUCTIONS;
   const server = new McpServer({ name: 'samepage', version: '0.1.0' }, { instructions });
@@ -95,6 +95,22 @@ export function buildMcpServer(store: Store, actor: Person, summary?: string): M
   }, (a) => run(async () => {
     await memory.setWorkstreamStatus(actor, a.id, a.status);
     return `Workstream ${a.id} is ${a.status}`;
+  }));
+
+  server.registerTool('rename_workstream', {
+    description: 'Rename a workstream. Any team member can.',
+    inputSchema: z.object({ id, title: z.string() }),
+  }, (a) => run(async () => {
+    await memory.renameWorkstream(actor, a.id, a.title);
+    return `Renamed workstream ${a.id}`;
+  }));
+
+  server.registerTool('merge_workstreams', {
+    description: 'Merge one workstream into another: moves all its updates and marks it done. Any team member can.',
+    inputSchema: z.object({ from_id: id, into_id: id }),
+  }, (a) => run(async () => {
+    await memory.mergeWorkstream(actor, a.from_id, a.into_id);
+    return `Merged ${a.from_id} into ${a.into_id}`;
   }));
 
   server.registerTool('correct_text', {
@@ -167,6 +183,10 @@ export function buildMcpServer(store: Store, actor: Person, summary?: string): M
     description: 'Reject an open proposal (not your own); the decision stays active.',
     inputSchema: z.object({ id, reason: z.string().optional() }),
   }, (a) => run(async () => `Rejected ${(await memory.rejectProposal(actor, a.id, a.reason)).id}`));
+
+  server.registerTool('open_dashboard', {
+    description: 'Open the SamePage web dashboard: returns a one-time sign-in link for the user (valid 10 minutes). Show the link to the user.',
+  }, () => run(async () => `Open this link to sign in to the SamePage dashboard (works once, valid 10 minutes): ${await openDashboard()}`));
 
   return server;
 }

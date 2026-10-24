@@ -33,6 +33,14 @@ Files, all under `~/.samepage/` (override with `SAMEPAGE_HOME`):
 - `capture.log`: one line per pass or failure (never conversation text); look here when nothing shows up.
 - `config.json`: `folders` (where capture runs) and `dailyLimit` (passes per day, default 20) are plain values you can edit; changes apply to the next session. It also holds your tokens, so keep it private.
 
+## Dashboard (optional)
+
+Ask your agent to "open the dashboard". It calls `open_dashboard` and gives you a sign-in link that works once and expires in 10 minutes; opening it keeps you signed in for 30 days in that browser. The dashboard shows what's new since your last visit, decisions with their history, open proposals, who thinks what, and team activity; you can accept or reject proposals and rename, merge or close workstreams. It is never required: everything it does, your agent can do too.
+
+The dashboard's "what's new" and the session summary each keep their own "last seen" time, so reading one does not hide anything from the other.
+
+To sign everyone out, set a new `DASHBOARD_SECRET` (deploy step 4).
+
 ## Hosting (free tiers)
 
 SamePage runs on Cloudflare Workers (code) and Neon (Postgres). Limits checked on 2026-10-24; they change, so re-check before relying on them.
@@ -64,8 +72,8 @@ Commands are shown for bash and for PowerShell. In PowerShell use `curl.exe` (pl
    - `npm run person:add -- meet "Meet" --system`
 
    Prefix each with `DATABASE_URL="<direct string>"` in bash. Each command prints that person's setup command (with their token) once. Send it to them through a private channel.
-   Lost or leaked token: `npm run person:rotate -- <id>` prints a new setup command and the old token stops working immediately.
-4. Log in and set the secret: `npx wrangler login`, then `npx wrangler secret put DATABASE_URL` (paste the pooled string).
+   Lost or leaked token: `npm run person:rotate -- <id>` prints a new setup command and the old token stops working immediately. If the token may have been used, also set a new `DASHBOARD_SECRET` (this signs everyone out of the dashboard).
+4. Log in and set the secrets: `npx wrangler login`, then `npx wrangler secret put DATABASE_URL` (paste the pooled string) and `npx wrangler secret put DASHBOARD_SECRET` (paste a long random value, e.g. from `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`; it signs dashboard links and sessions). For `wrangler dev`, put `DASHBOARD_SECRET=dev` in `.dev.vars`.
 5. Deploy: `npm run deploy` (it first builds `public/samepage-setup.tgz`, the installer teammates run, which the Worker serves as a static asset). Maintainers: bump `version` in `integrations/claude-code/package.json` whenever the client changes, or `npx` may reuse a cached old tarball. Wrangler prints the Worker URL (`https://samepage.<account>.workers.dev`). Set `SAMEPAGE_URL` to it when running `person:add` if it differs from the default. Current deployment: `https://samepage.scooli.workers.dev` (Scooli Cloudflare account).
 6. Check it:
    - `curl https://<worker>/health` returns `ok` (PowerShell: `curl.exe https://<worker>/health`)

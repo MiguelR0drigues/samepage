@@ -7,6 +7,8 @@ export const people = pgTable('people', {
   isSystem: boolean('is_system').notNull().default(false),
   tokenHash: text('token_hash').notNull().unique(),
   lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+  dashboardSeenAt: timestamp('dashboard_seen_at', { withTimezone: true }),
+  dashboardNonce: text('dashboard_nonce'),
 });
 
 export const entries = pgTable('entries', {

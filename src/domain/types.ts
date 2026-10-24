@@ -4,7 +4,7 @@ export type EntryStatus = 'active' | 'superseded' | 'under_review' | 'open' | 'a
 export type Consensus = 'unanimous' | 'majority' | 'no_consensus';
 export type SourceKind = 'meet' | 'claude_code' | 'explicit';
 export interface Position { person: string; position: string; arguments?: string }
-export interface Person { id: string; name: string; isSystem: boolean; lastSeenAt: Date | null }
+export interface Person { id: string; name: string; isSystem: boolean; lastSeenAt: Date | null; dashboardSeenAt: Date | null }
 export interface Entry {
   id: string; type: EntryType; status: EntryStatus; title: string; content: string;
   question: string | null; positions: Position[] | null; consensus: Consensus | null;
@@ -27,5 +27,5 @@ export type CorrectionVerdict = 'company' | 'personal' | 'not_worth_recording';
 export interface Correction { id: string; personId: string; verdict: CorrectionVerdict; candidate: Candidate; createdAt: Date }
 // pending/corrections are optional so Phase 1 exports still import.
 export interface Snapshot {
-  version: 1; people: (Person & { tokenHash: string })[]; entries: Entry[]; pending?: Pending[]; corrections?: Correction[];
+  version: 1; people: (Person & { tokenHash: string; dashboardNonce?: string | null })[]; entries: Entry[]; pending?: Pending[]; corrections?: Correction[];
 }

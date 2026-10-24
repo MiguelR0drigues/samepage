@@ -35,6 +35,12 @@ async function load(store: Store, id: string, opts?: { forUpdate?: boolean }): P
   return e;
 }
 
+async function loadWorkstream(store: Store, id: string): Promise<Entry> {
+  const w = await load(store, id, { forUpdate: true });
+  if (w.type !== 'workstream') throw new MemoryError(`Entry not found: ${id}`);
+  return w;
+}
+
 export class Memory {
   constructor(private store: Store) {}
 
@@ -75,9 +81,31 @@ export class Memory {
   async setWorkstreamStatus(actor: Person, id: string, status: 'in_progress' | 'blocked' | 'done'): Promise<Entry> {
     assertHuman(actor);
     return this.store.transaction(async (tx) => {
-      const w = await load(tx, id, { forUpdate: true });
-      if (w.type !== 'workstream') throw new MemoryError(`Entry not found: ${id}`);
+      await loadWorkstream(tx, id);
       return tx.updateEntry(id, { status }, actor.id);
+    });
+  }
+
+  async renameWorkstream(actor: Person, id: string, title: string): Promise<Entry> {
+    assertHuman(actor);
+    const trimmed = title.trim();
+    if (!trimmed) throw new MemoryError('A title is required.');
+    return this.store.transaction(async (tx) => {
+      await loadWorkstream(tx, id);
+      return tx.updateEntry(id, { title: trimmed }, actor.id);
+    });
+  }
+
+  async mergeWorkstream(actor: Person, fromId: string, intoId: string): Promise<Entry> {
+    assertHuman(actor);
+    // Ids are uuids: Postgres treats them case-insensitively.
+    if (fromId.toLowerCase() === intoId.toLowerCase()) throw new MemoryError('A workstream cannot be merged into itself.');
+    return this.store.transaction(async (tx) => {
+      // Lock in id order so two people merging A->B and B->A at once cannot deadlock.
+      for (const id of [fromId, intoId].sort()) await loadWorkstream(tx, id);
+      await tx.moveUpdates(fromId, intoId);
+      await tx.updateEntry(fromId, { status: 'done', resolutionNote: `Merged into ${intoId}` }, actor.id);
+      return (await tx.getEntry(intoId))!;
     });
   }
 
