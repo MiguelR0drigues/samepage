@@ -29,6 +29,14 @@ describe('slugify', () => {
   });
 });
 
+describe('pasteMessage', () => {
+  it('is one line and carries the literal Windows npx path', () => {
+    const m = pasteMessage('http://t', 'c0de');
+    expect(m).toContain('C:\\Program Files\\nodejs\\npx.cmd');
+    expect(m).not.toContain('\n');
+  });
+});
+
 describe('GET /join/:code', () => {
   it('shows the paste message and the terminal line for the right code', async () => {
     const res = await app.request('http://t/join/c0de', {}, ENV);
