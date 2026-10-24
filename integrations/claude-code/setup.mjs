@@ -171,6 +171,7 @@ function copyClient(/** @type {string} */ home) {
   const src = path.dirname(fileURLToPath(import.meta.url));
   for (const f of fs.readdirSync(src).filter((f) => f.endsWith('.mjs'))) fs.copyFileSync(path.join(src, f), path.join(home, f));
   fs.cpSync(path.join(src, 'lib'), path.join(home, 'lib'), { recursive: true });
+  fs.writeFileSync(path.join(home, 'version'), JSON.parse(fs.readFileSync(path.join(src, 'package.json'), 'utf8')).version); // what update.mjs compares
 }
 
 /** Approves the Claude login: inline in a terminal, else in a new window the installer does not wait for. */
