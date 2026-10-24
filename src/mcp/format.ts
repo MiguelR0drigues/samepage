@@ -10,6 +10,14 @@ export function formatEntry(e: Entry): string {
   if (e.question) lines.push(`question: ${e.question}`);
   for (const p of e.positions ?? []) lines.push(`position ${p.person}: ${p.position}${p.arguments ? ` (${p.arguments})` : ''}`);
   if (e.consensus) lines.push(`consensus: ${e.consensus}${e.consensusReason ? ` - ${e.consensusReason}` : ''}`);
+  const links = [
+    e.targetId && `revises: ${e.targetId}`,
+    e.supersedesId && `supersedes: ${e.supersedesId}`,
+    e.resolutionNote && `note: ${e.resolutionNote}`,
+    e.sourceKind && `source: ${e.sourceKind}${e.sourceRef ? ` ${e.sourceRef}` : ''}`,
+    !e.authors.includes(e.recordedBy) && `recorded by: ${e.recordedBy}`,
+  ].filter(Boolean);
+  if (links.length) lines.push(links.join(' | '));
   lines.push(e.content.length > MAX_CONTENT ? `${e.content.slice(0, MAX_CONTENT)}...` : e.content);
   return lines.join('\n');
 }

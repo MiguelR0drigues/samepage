@@ -28,7 +28,7 @@ describe('sessionSummary', () => {
     const text = await sessionSummary(store, miguel, new Date());
     expect(text).toContain('# Team memory (SamePage)');
     expect(text).toContain('- Keep it small: Prefer small changes.');
-    expect(text).toContain(`- [${d.id.slice(0, 8)}] Use Neon (infra, ${new Date().toISOString().slice(0, 10)})`);
+    expect(text).toContain(`- [${d.id}] Use Neon (infra, ${new Date().toISOString().slice(0, 10)})`);
     expect(text).toContain('## Open proposals');
     expect(text).toContain('→ revises "Use Neon"');
     expect(text).toContain('Use the samepage tools for details.');
@@ -44,9 +44,19 @@ describe('sessionSummary', () => {
     const text = await sessionSummary(store, await fresh('miguel'), new Date());
     expect(text).toContain('## New since your last session');
     expect(text).toContain('- new: Joao view (by joao)');
-    expect(text).toContain('- removed: Doomed view (by joao)');
+    expect(text).toContain(`- removed: view [${doomed.id}] (by joao)`);
+    expect(text).not.toContain('Doomed view');
     expect(text).not.toContain('My own view');
     expect(mine.id).not.toBe(theirs.id);
+  });
+
+  it('counts the changes beyond the cap of 8', async () => {
+    await store.touchLastSeen('miguel', new Date(Date.now() - 60_000));
+    for (let i = 0; i < 12; i++) await memory.record(joao, { type: 'view', title: `View ${i}`, content: 'x', area: 'a' });
+
+    const text = await sessionSummary(store, await fresh('miguel'), new Date());
+    expect(text.match(/^- new: /gm)).toHaveLength(8);
+    expect(text).toContain('- …and 4 more changes');
   });
 
   it('first session has no changes section and the second one does', async () => {

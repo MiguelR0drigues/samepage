@@ -71,7 +71,8 @@ export class PostgresStore implements Store {
     if (q.trim() === '') return this.listEntries({ area: f.area, limit: f.limit });
     // shortcut: 'simple' config with no stemming or index; switch to a GIN index/embeddings if search misses or gets slow
     const doc = sql`to_tsvector('simple', ${entries.title} || ' ' || coalesce(${entries.question}, '') || ' ' || ${entries.content})`;
-    const query = sql`websearch_to_tsquery('simple', ${q})`;
+    // websearch ANDs the words; swap to OR so partial matches still hit (ts_rank puts full matches first).
+    const query = sql`replace(websearch_to_tsquery('simple', ${q})::text, '&', '|')::tsquery`;
     const rows = await this.db.select().from(entries)
       .where(and(isNull(entries.deletedAt), f.area ? eq(entries.area, f.area) : undefined, sql`${doc} @@ ${query}`))
       .orderBy(desc(sql`ts_rank(${doc}, ${query})`), desc(entries.createdAt))

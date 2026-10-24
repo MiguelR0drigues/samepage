@@ -49,6 +49,13 @@ describe('PostgresStore', () => {
     await expect(store.search('"; drop table', {})).resolves.toBeDefined();
   });
 
+  it('matches entries containing any of the search words, not all', async () => {
+    await store.insertEntry(base({ title: 'Per-seat pricing' }));
+    await store.insertEntry(base({ title: 'Use Neon' }));
+    expect((await store.search('pricing model', {})).map((e) => e.title)).toEqual(['Per-seat pricing']);
+    expect(await store.search('kubernetes cluster', {})).toEqual([]);
+  });
+
   it('listEntries filters by type and status and excludes deleted', async () => {
     await store.insertEntry(base({ title: 'a' }));
     await store.insertEntry(base({ title: 'b', type: 'view' }));
