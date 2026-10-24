@@ -6,6 +6,7 @@ import type { Store } from '../storage/store';
 import { formatEntry } from './format';
 
 const INSTRUCTIONS = `Shared team memory: decisions, personal views, principles and explorations about the company.
+- These samepage tools ARE the team memory. Whenever the user asks, in any language, to record, save, remember or note something about the company, product or team ("regista", "guarda", "lembra-te", "anota"), or asks what the team decided or thinks, use them — not local files or your own memory.
 - Before relevant work (architecture, product, marketing, positioning, roadmap), use search_context.
 - If your suggestion contradicts a recorded decision: still give the suggestion, but warn and present the facts — your suggestion and why, the recorded decision it contradicts, and its context (when, who, positions, arguments, consensus). Then always ask what to do. If the person decides to go against the decision, use propose_revision.
 - When told to record something ("record this", "we decided X with Y"), use record; use list_team to get the author ids.
@@ -55,7 +56,7 @@ export function buildMcpServer(store: Store, actor: Person, summary?: string): M
   const server = new McpServer({ name: 'samepage', version: '0.1.0' }, { instructions });
 
   server.registerTool('search_context', {
-    description: 'Search the team memory (decisions, views, principles, explorations).',
+    description: 'Search the shared team memory (SamePage): what the team decided, thinks or follows (decisions, views, principles, explorations).',
     inputSchema: z.object({ query: z.string(), area: z.string().optional(), limit }),
   }, (a) => run(async () => list(await store.search(a.query, { area: a.area, limit: a.limit }))));
 
@@ -72,7 +73,7 @@ export function buildMcpServer(store: Store, actor: Person, summary?: string): M
     () => run(async () => (await store.listPeople()).filter((p) => !p.isSystem).map((p) => `${p.id}: ${p.name}`).join('\n')));
 
   server.registerTool('record', {
-    description: 'Record a decision, view, principle, exploration, workstream (a tracked piece of work) or update (a progress note on a workstream).',
+    description: 'Save to the shared team memory (SamePage) — use when asked to record/save/remember something about the company: a decision, view, principle, exploration, workstream (a tracked piece of work) or update (a progress note on a workstream).',
     inputSchema: z.object(recordFields),
   }, (a) => run(async () => `Recorded ${(await memory.record(actor, toRecordInput(a))).id}`));
 
