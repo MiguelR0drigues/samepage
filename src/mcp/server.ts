@@ -49,9 +49,10 @@ async function run(fn: () => Promise<string>) {
 
 const list = (entries: Entry[]) => (entries.length ? entries.map(formatEntry).join('\n\n') : 'No results.');
 
-export function buildMcpServer(store: Store, actor: Person): McpServer {
+export function buildMcpServer(store: Store, actor: Person, summary?: string): McpServer {
   const memory = new Memory(store);
-  const server = new McpServer({ name: 'samepage', version: '0.1.0' }, { instructions: INSTRUCTIONS });
+  const instructions = summary ? `${INSTRUCTIONS}\n\n${summary}` : INSTRUCTIONS;
+  const server = new McpServer({ name: 'samepage', version: '0.1.0' }, { instructions });
 
   server.registerTool('search_context', {
     description: 'Search the team memory (decisions, views, principles, explorations).',

@@ -1,17 +1,16 @@
 # SamePage for Claude Code
 
-Connects Claude Code to SamePage and shows a short team summary at session start.
+## Join (each teammate, one command)
 
-1. Each person sets `SAMEPAGE_URL` (no trailing slash) and `SAMEPAGE_TOKEN` as **user environment variables**. Never put them in the repo.
-2. In each company repo:
-   - copy `mcp.json` to `.mcp.json` at the repo root;
-   - copy `session-start.mjs` to `.claude/samepage/session-start.mjs`;
-   - merge `settings.json` into `.claude/settings.json`.
-3. Commit those files to the company repo.
+Ask the admin for your personal setup command (printed by `npm run person:add`) and paste it into any terminal:
 
-If the variables are missing or the server is unreachable, the hook prints nothing and the session starts normally.
+```
+claude mcp add --scope user --transport http samepage https://samepage.scooli.workers.dev/mcp --header "Authorization: Bearer <your token>"
+```
 
-The hook command uses `$CLAUDE_PROJECT_DIR`, so it works even when Claude Code starts in a subdirectory of the repo.
+That is all. It works in every folder (including a parent folder with several repos) and in the Claude desktop app. Open a new session: `/mcp` shows `samepage` connected, and your team summary (principles, recent decisions, what changed since your last session, open proposals) arrives with the server instructions at the start of each session.
+
+To disconnect: `claude mcp remove samepage -s user`.
 
 ## Hosting (free tiers)
 
@@ -43,14 +42,12 @@ Commands are shown for bash and for PowerShell. In PowerShell use `curl.exe` (pl
    - `npm run person:add -- miguel "Miguel"`
    - `npm run person:add -- meet "Meet" --system`
 
-   Prefix each with `DATABASE_URL="<direct string>"` in bash. Each command prints a token once. Give each person theirs through a private channel.
-   Lost or leaked token: `npm run person:rotate -- <id>` prints a new one and the old one stops working immediately.
+   Prefix each with `DATABASE_URL="<direct string>"` in bash. Each command prints that person's setup command (with their token) once. Send it to them through a private channel.
+   Lost or leaked token: `npm run person:rotate -- <id>` prints a new setup command and the old token stops working immediately.
 4. Log in and set the secret: `npx wrangler login`, then `npx wrangler secret put DATABASE_URL` (paste the pooled string).
-5. Deploy: `npm run deploy`. Wrangler prints the Worker URL (`https://samepage.<account>.workers.dev`). That is the `SAMEPAGE_URL`. Current deployment: `https://samepage.scooli.workers.dev` (Scooli Cloudflare account).
+5. Deploy: `npm run deploy`. Wrangler prints the Worker URL (`https://samepage.<account>.workers.dev`). Set `SAMEPAGE_URL` to it when running `person:add` if it differs from the default. Current deployment: `https://samepage.scooli.workers.dev` (Scooli Cloudflare account).
 6. Check it:
    - `curl https://<worker>/health` returns `ok` (PowerShell: `curl.exe https://<worker>/health`)
    - `curl -H "Authorization: Bearer <token>" https://<worker>/summary` returns the summary header (PowerShell: `curl.exe -H "Authorization: Bearer <token>" https://<worker>/summary`)
-
-On Windows, Claude Code runs hooks under Git Bash, so the session-start hook command works there as written.
 
 `npm run db:export` files contain the token hashes, so store them privately.

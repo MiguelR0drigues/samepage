@@ -5,6 +5,10 @@ import { isMain, runCli } from './db';
 
 export const newToken = () => randomBytes(32).toString('hex');
 
+// The one line a teammate pastes to connect Claude Code (any folder, desktop app included).
+export const setupCommand = (token: string, url = process.env.SAMEPAGE_URL ?? 'https://samepage.scooli.workers.dev') =>
+  `claude mcp add --scope user --transport http samepage ${url}/mcp --header "Authorization: Bearer ${token}"`;
+
 export async function createPerson(store: Store, p: { id: string; name: string; isSystem: boolean }) {
   const token = newToken();
   const person = await store.addPerson(p, await sha256Hex(token));
@@ -19,7 +23,7 @@ if (isMain(import.meta.url)) {
   } else {
     await runCli(async (store) => {
       const { person, token } = await createPerson(store, { id, name, isSystem: flags.includes('--system') });
-      console.log(`Added ${person.id} (${person.name}). Token (shown once, store it safely):\n${token}`);
+      console.log(`Added ${person.id} (${person.name}). Send them this setup command privately (shown once, it contains their token):\n${setupCommand(token)}`);
     });
   }
 }

@@ -33,7 +33,11 @@ export function createApp(getStore: (env: Env) => Store) {
 
   app.all('/mcp', async (c) => {
     const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
-    await buildMcpServer(c.get('store'), c.get('person')).connect(transport);
+    // The client's instructions are only read at initialize: build the summary (and advance lastSeenAt) only then.
+    const body: unknown = await c.req.raw.clone().json().catch(() => null);
+    const isInit = (Array.isArray(body) ? body : [body]).some((m) => (m as { method?: string } | null)?.method === 'initialize');
+    const summary = isInit ? await sessionSummary(c.get('store'), c.get('person'), new Date()) : undefined;
+    await buildMcpServer(c.get('store'), c.get('person'), summary).connect(transport);
     // JSON (not SSE) so the response is complete when handleRequest resolves; the Worker closes its DB pool right after.
     return transport.handleRequest(c.req.raw);
   });

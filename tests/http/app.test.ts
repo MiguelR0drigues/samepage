@@ -54,6 +54,29 @@ describe('MCP transport', () => {
     expect(res.headers.get('content-type')).toContain('application/json');
     expect(((await res.json()) as { result: { serverInfo: { name: string } } }).result.serverInfo.name).toBe('samepage');
   });
+
+  it('puts the personal session summary in the initialize instructions, and only there', async () => {
+    const joao = (await store.listPeople()).find((p) => p.id === 'joao')!;
+    await store.insertEntry({
+      type: 'principle', status: 'active', title: 'Plain language', content: 'No jargon.', question: null, positions: null,
+      consensus: null, consensusReason: null, area: 'brand', sourceKind: 'explicit', sourceRef: null, authors: [joao.id],
+      recordedBy: joao.id, supersedesId: null, targetId: null, resolutionNote: null, workstreamId: null,
+    });
+    const post = (body: object) => app.request('/mcp', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer t-miguel', 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+      body: JSON.stringify(body),
+    });
+    await post({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
+    expect((await store.listPeople()).find((p) => p.id === 'miguel')!.lastSeenAt).toBeNull();
+
+    const res = await post({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '0' } } });
+    const { instructions } = ((await res.json()) as { result: { instructions: string } }).result;
+    expect(instructions).toContain('Shared team memory');
+    expect(instructions).toContain('# Team memory (SamePage)');
+    expect(instructions).toContain('Plain language');
+    expect((await store.listPeople()).find((p) => p.id === 'miguel')!.lastSeenAt).not.toBeNull();
+  });
 });
 
 describe('MCP tools', () => {

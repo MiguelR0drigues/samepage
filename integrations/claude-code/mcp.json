@@ -1,9 +1,0 @@
-{
-  "mcpServers": {
-    "samepage": {
-      "type": "http",
-      "url": "${SAMEPAGE_URL}/mcp",
-      "headers": { "Authorization": "Bearer ${SAMEPAGE_TOKEN}" }
-    }
-  }
-}

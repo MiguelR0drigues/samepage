@@ -1,6 +1,6 @@
 import type { Store } from '../src/storage/store';
 import { sha256Hex } from '../src/http/app';
-import { newToken } from './add-person';
+import { newToken, setupCommand } from './add-person';
 import { isMain, runCli } from './db';
 
 // Replaces a person's token; the old one stops working immediately.
@@ -19,7 +19,7 @@ if (isMain(import.meta.url)) {
   } else {
     await runCli(async (store) => {
       const { person, token } = await rotateToken(store, id);
-      console.log(`New token for ${person.id} (${person.name}); the old one no longer works. Shown once, store it safely:\n${token}`);
+      console.log(`New token for ${person.id} (${person.name}); the old one no longer works. Send them this setup command privately (shown once; run \`claude mcp remove samepage -s user\` first if already set up):\n${setupCommand(token)}`);
     });
   }
 }
