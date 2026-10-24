@@ -21,6 +21,8 @@ input,select,button{font:inherit;color:var(--tx);background:var(--card);border:1
 .tl{border-left:2px solid var(--line);padding-left:12px;line-height:2}
 .t{font-weight:500;margin:14px 0 8px}h3{margin:0 0 6px;font-weight:500}
 .pre{white-space:pre-wrap}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px}.cols .row{margin:0}
+form.inl{display:inline-flex;gap:8px;margin:0 8px 0 0}
 @media (max-width:640px){.sp{grid-template-columns:1fr}.nav{flex-direction:row;flex-wrap:wrap;align-items:center}.nav .brand{padding:4px 12px}.nav .me{margin:0 0 0 auto;padding:0 12px}}
 `;
 
@@ -41,8 +43,9 @@ ${NAV.map(([key, href, label]) => html`<a href="${href}" class="${key === o.acti
 </div></body></html>`;
 
 // Bare page for errors: it must work without a signed-in person.
-export const message = async (status: number, text: string): Promise<Response> =>
-  new Response(await html`${head('SamePage')}<body><div class="sp" style="display:block"><main class="main"><p>${text}</p></main></div></body></html>`,
+export const message = async (status: number, text: string, back?: { href: string; label: string }): Promise<Response> =>
+  new Response(await html`${head('SamePage')}<body><div class="sp" style="display:block"><main class="main"><p>${text}</p>
+${back && html`<p><a href="${back.href}">${back.label}</a></p>`}</main></div></body></html>`,
     { status, headers: { 'Content-Type': 'text/html; charset=utf-8' } });
 
 export const entryHref = (e: Entry) => `/dashboard/${e.type === 'workstream' ? 'workstreams' : 'entries'}/${e.id}`;

@@ -5,7 +5,7 @@ import { createApp, sha256Hex } from '../../src/http/app';
 import { Memory } from '../../src/service/memory';
 import { PostgresStore } from '../../src/storage/postgres/store';
 import { createTestDb } from '../helpers/db';
-import { ENV, get, signIn } from './helpers';
+import { ENV, get, post, signIn } from './helpers';
 
 let store: PostgresStore;
 let app: ReturnType<typeof createApp>;
@@ -150,5 +150,114 @@ describe('Home', () => {
     const home = await (await get(app, '/dashboard', session)).text();
     expect(home).not.toContain('Search results');
     expect(home).toMatch(/Timeline[\s\S]*Per-seat pricing[\s\S]*active/);
+  });
+});
+
+const both = { authors: ['miguel', 'joao'] };
+
+describe('decision page', () => {
+  it('shows question, positions by name, verdict and why without consensus', async () => {
+    const e = await new Memory(store).record(miguel, {
+      ...decision('Per-seat pricing'), question: 'How do we charge?', consensus: 'majority',
+      consensusReason: 'We need a price for the landing page',
+      positions: [{ person: 'miguel', position: 'per seat', arguments: '<b>predictable</b>' }, { person: 'joao', position: 'per use' }],
+    });
+    const res = await get(app, `/dashboard/entries/${e.id}`, await signIn(app, store, 'miguel'));
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    for (const s of ['Miguel', 'João', 'per seat', 'per use', 'How do we charge?', 'We charge per seat.', '&lt;b&gt;predictable',
+      'majority', 'Why we went ahead without full consensus', 'We need a price for the landing page']) expect(body).toContain(s);
+    expect(body).not.toContain('<b>predictable');
+  });
+
+  it('shows the supersession history both ways', async () => {
+    const a = await new Memory(store).record(miguel, { ...decision('Per-seat pricing'), ...both });
+    const { entry: b } = await new Memory(store).supersede(miguel, a.id, { ...decision('Per-use pricing'), ...both });
+    const session = await signIn(app, store, 'miguel');
+    expect(await (await get(app, `/dashboard/entries/${a.id}`, session)).text()).toContain(`/dashboard/entries/${b.id}`);
+    expect(await (await get(app, `/dashboard/entries/${b.id}`, session)).text()).toContain(`/dashboard/entries/${a.id}`);
+  });
+
+  it('lists revision proposals in the history', async () => {
+    const a = await new Memory(store).record(miguel, { ...decision('Per-seat pricing'), ...both });
+    const p = await new Memory(store).proposeRevision(joao, a.id, { title: 'Per-use pricing', content: 'x', justification: 'y' });
+    const body = await (await get(app, `/dashboard/entries/${a.id}`, await signIn(app, store, 'miguel'))).text();
+    expect(body).toContain(`/dashboard/entries/${p.id}`);
+    expect(body).toContain('open');
+  });
+
+  it('a proposal shows what it revises; other types render too; a workstream redirects', async () => {
+    const session = await signIn(app, store, 'miguel');
+    const a = await new Memory(store).record(miguel, { ...decision('Per-seat pricing'), ...both });
+    const p = await new Memory(store).proposeRevision(joao, a.id, { title: 'Per-use pricing', content: 'x', justification: 'y' });
+    const body = await (await get(app, `/dashboard/entries/${p.id}`, session)).text();
+    expect(body).toMatch(/Revises:[\s\S]*Per-seat pricing/);
+    const view = await new Memory(store).record(joao, { type: 'view', title: 'My view', content: 'Seats are fine.', area: 'pricing' });
+    expect(await (await get(app, `/dashboard/entries/${view.id}`, session)).text()).toContain('Seats are fine.');
+    const w = await new Memory(store).record(joao, { type: 'workstream', title: 'Launch', content: 'c', area: 'gtm' });
+    const res = await get(app, `/dashboard/entries/${w.id}`, session);
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe(`/dashboard/workstreams/${w.id}`);
+  });
+
+  it('unknown, malformed and deleted ids are 404', async () => {
+    const session = await signIn(app, store, 'miguel');
+    const e = await new Memory(store).record(miguel, decision('Gone'));
+    await new Memory(store).remove(miguel, e.id);
+    for (const id of ['abc', crypto.randomUUID(), e.id]) {
+      const res = await get(app, `/dashboard/entries/${id}`, session);
+      expect(res.status).toBe(404);
+    }
+    expect(await (await get(app, `/dashboard/entries/${e.id}`, session)).text()).not.toContain('Gone');
+  });
+});
+
+describe('proposals', () => {
+  async function propose() {
+    const a = await new Memory(store).record(miguel, { ...decision('Per-seat pricing'), ...both });
+    const p = await new Memory(store).proposeRevision(joao, a.id, { title: 'Per-use pricing', content: 'Switch.', justification: 'y' });
+    return { a, p };
+  }
+
+  it('others can accept, the proposer cannot', async () => {
+    const { a, p } = await propose();
+    const [m, j] = [await signIn(app, store, 'miguel'), await signIn(app, store, 'joao')];
+    const mine = await (await get(app, '/dashboard/proposals', m)).text();
+    expect(mine).toContain('Accept');
+    expect(mine).toContain('Per-use pricing');
+    expect(mine).toContain('Revises:');
+    const theirs = await (await get(app, '/dashboard/proposals', j)).text();
+    expect(theirs).toContain('you cannot close your own proposal');
+    expect(theirs).not.toContain('Accept');
+    const refused = await post(app, `/dashboard/proposals/${p.id}/accept`, j, {});
+    expect(refused.status).toBe(400);
+    expect(await refused.text()).toContain('You cannot close your own proposal.');
+    const ok = await post(app, `/dashboard/proposals/${p.id}/accept`, m, {});
+    expect(ok.status).toBe(303);
+    expect(ok.headers.get('location')).toBe('/dashboard/proposals');
+    expect((await store.getEntry(a.id))!.status).toBe('superseded');
+    expect(await (await get(app, '/dashboard/proposals', m)).text()).toContain('No open proposals.');
+  });
+
+  it('reject keeps the decision and stores the reason', async () => {
+    const { a, p } = await propose();
+    const res = await post(app, `/dashboard/proposals/${p.id}/reject`, await signIn(app, store, 'miguel'), { reason: 'Too risky' });
+    expect(res.status).toBe(303);
+    expect((await store.getEntry(a.id))!.status).toBe('active');
+    expect((await store.getEntry(p.id))!.resolutionNote).toBe('Too risky');
+  });
+
+  it('a bad id is 404', async () => {
+    const res = await post(app, '/dashboard/proposals/abc/accept', await signIn(app, store, 'miguel'), {});
+    expect(res.status).toBe(404);
+  });
+
+  it('cross-site POST is refused', async () => {
+    const { p } = await propose();
+    const res = await app.request(`/dashboard/proposals/${p.id}/accept`, {
+      method: 'POST', headers: { Cookie: await signIn(app, store, 'miguel'), Origin: 'https://evil.example' }, body: new URLSearchParams({}),
+    }, ENV);
+    expect(res.status).toBe(403);
+    expect((await store.getEntry(p.id))!.status).toBe('open');
   });
 });
