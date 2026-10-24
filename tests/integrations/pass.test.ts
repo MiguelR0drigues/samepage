@@ -38,7 +38,7 @@ const out = {
   update: { title: 'Pricing', content: 'Set pricing. Next: page.', area: 'pricing', workstream_id: null, workstream_title: 'Pricing' },
 };
 
-function deps(o: { ctxStatus?: number; applyStatus?: number; applyResult?: object; claudeOut?: unknown; claudeError?: boolean; dailyLimit?: number } = {}) {
+function deps(o: { ctxStatus?: number; applyStatus?: number; applyResult?: object; claudeOut?: unknown; claudeError?: boolean; dailyLimit?: number; onClaude?: () => void } = {}) {
   const calls: { url: string; init: any }[] = [];
   const claudeCalls: any[] = [];
   const fetch = async (url: string, init: any = {}) => {
@@ -49,6 +49,7 @@ function deps(o: { ctxStatus?: number; applyStatus?: number; applyResult?: objec
   };
   const runClaude = async (args: any) => {
     claudeCalls.push(args);
+    o.onClaude?.();
     if (o.claudeError) throw new Error('claude failed');
     return o.claudeOut ?? out;
   };
@@ -71,7 +72,7 @@ it('final pass sends only items and update, never excerpt text', async () => {
   const { d, calls, claudeCalls } = deps();
   expect(await runPass('s1', 'final', d)).toBe('done');
   expect(calls.map((c) => c.url)).toEqual(['https://sp.test/extractor/context', 'https://sp.test/extractor/apply']);
-  expect(calls.every((c) => c.init.headers.Authorization === 'Bearer tok')).toBe(true);
+  expect(calls.every((c) => c.init.headers.Authorization === 'Bearer tok' && c.init.signal instanceof AbortSignal)).toBe(true);
   const raw = calls[1]!.init.body as string;
   expect(raw).not.toContain(SECRET);
   expect(JSON.parse(raw)).toEqual({
@@ -88,7 +89,7 @@ it('final pass sends only items and update, never excerpt text', async () => {
   expect(fs.readFileSync(c.systemPromptFile, 'utf8')).toBe(SYSTEM_PROMPT);
   expect(c.systemPromptFile).toBe(path.join(home, 'work', 'policy.md'));
   const s = loadSession(home, 's1');
-  expect(s).toMatchObject({ processedLine: 10, processedAt: NOW, notes: ['worked on pricing'], notice: null });
+  expect(s).toMatchObject({ processedLine: 10, processedAt: NOW, notes: [], notice: null });
   expect(logText()).toMatch(/s1 final: recorded 1, proposals 0, pending 0, update no\n$/);
   expect(logText()).not.toContain(SECRET);
 });
@@ -157,7 +158,41 @@ it('tiny final tail with earlier notes still calls claude and sends the update',
   expect(claudeCalls).toHaveLength(1);
   expect(claudeCalls[0].prompt).toContain('# Progress earlier in this session\ndid a');
   expect(JSON.parse(calls[1]!.init.body).update).toMatchObject({ title: 'Pricing' });
-  expect(loadSession(home, 's1')).toMatchObject({ processedLine: 4, notes: ['did a', 'worked on pricing'] });
+  expect(loadSession(home, 's1')).toMatchObject({ processedLine: 4, notes: [] });
+});
+
+it('final pass after a mid pass with no new messages still sends the update', async () => {
+  session('s1', { transcriptPath: transcript(20) });
+  expect(await runPass('s1', 'mid', deps().d)).toBe('done');
+  expect(loadSession(home, 's1')).toMatchObject({ processedLine: 40, notes: ['worked on pricing'] });
+  const { d, calls, claudeCalls } = deps();
+  expect(await runPass('s1', 'final', d)).toBe('done');
+  expect(claudeCalls[0].prompt).toContain('# Session update: needed');
+  expect(claudeCalls[0].prompt).not.toContain(SECRET);
+  expect(JSON.parse(calls[1]!.init.body).update).toMatchObject({ title: 'Pricing' });
+  expect(loadSession(home, 's1')).toMatchObject({ processedLine: 40, notes: [] });
+});
+
+it('a second final pass with nothing new is skipped', async () => {
+  session('s1');
+  expect(await runPass('s1', 'final', deps().d)).toBe('done');
+  const { d, calls, claudeCalls } = deps();
+  expect(await runPass('s1', 'final', d)).toBe('skipped');
+  expect(calls).toHaveLength(0);
+  expect(claudeCalls).toHaveLength(0);
+});
+
+it('a privacy command during the pass drops the result', async () => {
+  const changes = { s1: { private: true }, s2: { skipUntilLine: 10 } };
+  for (const [id, change] of Object.entries(changes)) {
+    session(id);
+    const before = loadSession(home, id);
+    const { d, calls } = deps({ onClaude: () => saveSession(home, id, { ...loadSession(home, id), ...change }) });
+    expect(await runPass(id, 'final', d)).toBe('skipped');
+    expect(calls.map((c) => c.url)).toEqual(['https://sp.test/extractor/context']);
+    expect(loadSession(home, id)).toEqual({ ...before, ...change });
+    expect(logText()).toContain(`${id} final: dropped (privacy command during pass)`);
+  }
 });
 
 it('context or claude failure logs and leaves state unchanged', async () => {

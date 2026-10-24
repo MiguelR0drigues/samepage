@@ -11,6 +11,9 @@ import { sanitizeEnv, claudeCommand } from './claude.mjs';
  * @typedef {'skipped' | 'done' | 'failed'} PassResult
  */
 
+// bounds a pass well under LOCK_STALE_MS when the network hangs (claude has its own timeout)
+const FETCH_TIMEOUT_MS = 30_000;
+
 // the apply schema rejects null for optional fields
 const compact = (/** @type {any} */ o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v != null));
 
@@ -30,11 +33,13 @@ export async function runPass(id, mode, { home, config, env, fetch, runClaude, n
   try {
     const s = loadSession(home, id);
     if (s.private || !s.transcriptPath) return 'skipped';
-    const t = readTranscript(s.transcriptPath, Math.max(s.processedLine, s.skipUntilLine));
-    if (!t.messages.length) return 'skipped';
+    const start = Math.max(s.processedLine, s.skipUntilLine);
+    const t = readTranscript(s.transcriptPath, start);
+    // a final pass after earlier passes still goes to the model, for the session update
+    const owesUpdate = mode === 'final' && s.notes.length > 0;
+    if (!t.messages.length && !owesUpdate) return 'skipped';
     if (mode === 'mid' && t.messages.length < MID_SESSION_EVERY) return 'skipped';
-    // a tiny final tail after earlier passes still goes to the model, for the session update
-    if ((t.userCount < MIN_USER_MESSAGES || t.chars < MIN_CHARS) && !(mode === 'final' && s.notes.length)) {
+    if ((t.userCount < MIN_USER_MESSAGES || t.chars < MIN_CHARS) && !owesUpdate) {
       if (mode !== 'final') return 'skipped';
       save({ processedLine: t.endLine, processedAt: now });
       return 'done';
@@ -44,9 +49,10 @@ export async function runPass(id, mode, { home, config, env, fetch, runClaude, n
 
     const url = config.url.replace(/\/+$/, '');
     const headers = { Authorization: `Bearer ${config.token}`, 'Content-Type': 'application/json' };
+    const signal = () => AbortSignal.timeout(FETCH_TIMEOUT_MS);
     let context;
     try {
-      const res = await fetch(`${url}/extractor/context`, { headers });
+      const res = await fetch(`${url}/extractor/context`, { headers, signal: signal() });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       context = await res.json();
     } catch (e) { log(home, `${tag}: context failed: ${/** @type {Error} */ (e).message}`); return 'failed'; }
@@ -71,14 +77,17 @@ export async function runPass(id, mode, { home, config, env, fetch, runClaude, n
       ...compact({ session_ref: `claude_code:${id}`, branch_hint: hint }), items,
       update: mode === 'final' && out.update ? compact(out.update) : null,
     };
+    const latest = loadSession(home, id);
+    if (latest.private || latest.skipUntilLine > start) { log(home, `${tag}: dropped (privacy command during pass)`); return 'skipped'; }
     /** @type {{ recorded: string[], proposals: string[], pending: string[], update: string | null }} */ let r;
     try {
-      const res = await fetch(`${url}/extractor/apply`, { method: 'POST', headers, body: JSON.stringify(body) });
+      const res = await fetch(`${url}/extractor/apply`, { method: 'POST', headers, body: JSON.stringify(body), signal: signal() });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       r = await res.json();
     } catch (e) { log(home, `${tag}: apply failed: ${/** @type {Error} */ (e).message}`); return 'failed'; }
 
-    const notes = typeof out.progress === 'string' && out.progress ? [...s.notes, out.progress].slice(-10) : s.notes;
+    // the final update has summarized the notes: a later final with nothing new sends no second update
+    const notes = mode === 'final' ? [] : typeof out.progress === 'string' && out.progress ? [...s.notes, out.progress].slice(-10) : s.notes;
     /** @type {Record<string, unknown>} */ const patch = { processedLine: t.endLine, processedAt: now, notes };
     if (mode === 'mid' && r.pending?.length) {
       // the server turns medium items into pending questions in order, up to its cap
