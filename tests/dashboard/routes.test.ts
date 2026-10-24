@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Person } from '../../src/domain/types';
 import { issueLink, sessionToken } from '../../src/dashboard/auth';
 import { createApp, sha256Hex } from '../../src/http/app';
@@ -114,6 +114,15 @@ describe('Home', () => {
     const summary = await app.request('/summary', { headers: { Authorization: 'Bearer t-miguel' } }, ENV);
     expect(await summary.text()).toMatch(/New since your last session[\s\S]*Per-seat pricing/);
     expect((await seen()).dashboardSeenAt).toEqual(dashboardSeenAt);
+  });
+
+  it('a failed read leaves the cursor where it was', async () => {
+    const failing = Object.assign(Object.create(store), { changesSince: () => Promise.reject(new Error('db down')) });
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const res = await get(createApp(() => failing), '/dashboard', await signIn(app, store, 'miguel'));
+    log.mockRestore();
+    expect(res.status).toBe(500);
+    expect((await store.listPeople()).find((p) => p.id === 'miguel')!.dashboardSeenAt).toBeNull();
   });
 
   it('escapes text written by agents', async () => {

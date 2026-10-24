@@ -56,14 +56,16 @@ export function dashboardRoutes(getStore: (env: Env) => Store) {
     const stored = new Date(getCookie(c, 'sp_visit') ?? NaN);
     const resumed = !Number.isNaN(stored.getTime());
     const cutoff = resumed ? stored : person.dashboardSeenAt ?? new Date(now.getTime() - FIRST_VISIT_MS);
-    if (!resumed) await store.touchDashboardSeen(person.id, now);
-    setCookie(c, 'sp_visit', cutoff.toISOString(), { httpOnly: true, path: '/dashboard', maxAge: VISIT_TTL_S });
     const q = (c.req.query('q') ?? '').trim();
     // Sequential: each read takes a pooled connection, and the Worker has few.
     const changes = await store.changesSince(cutoff, person.id);
     const results = q ? await store.search(q, { limit: 20 }) : null;
     const timeline = await store.listEntries({ type: 'decision', limit: 20 });
-    return c.html(await homePage({ person, people: c.get('people'), changes, q, results, timeline }));
+    const page = await homePage({ person, people: c.get('people'), changes, q, results, timeline });
+    // Only after every read succeeded: a failed load must not lose the old cutoff.
+    if (!resumed) await store.touchDashboardSeen(person.id, now);
+    setCookie(c, 'sp_visit', cutoff.toISOString(), { httpOnly: true, path: '/dashboard', maxAge: VISIT_TTL_S });
+    return c.html(page);
   });
 
   // Keep last: unknown dashboard paths answer here instead of falling through to the bearer middleware.
