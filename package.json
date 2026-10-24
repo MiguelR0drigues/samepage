@@ -16,6 +16,8 @@
   "dependencies": {
     "@modelcontextprotocol/client": "2.4.0",
     "@modelcontextprotocol/server": "2.4.0",
+    "@neon/config": "1.9.3",
+    "@neon/env": "1.6.4",
     "@neondatabase/serverless": "1.2.0",
     "drizzle-orm": "0.45.4",
     "hono": "4.13.13",
