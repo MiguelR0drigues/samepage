@@ -47,7 +47,7 @@ const run = (args: string[], env: Record<string, string>) => new Promise<{ code:
 it('installs end to end with flags and no terminal, and a re-run reuses the token', async () => {
   const folder = path.join(root, 'work');
   const home = path.join(root, 'home');
-  const claudeDir = path.join(root, 'claude');
+  const claudeDir = path.join(root, 'claude-config');
   fs.mkdirSync(folder);
   const log = path.join(root, 'claude.log');
   const env = { SAMEPAGE_HOME: home, CLAUDE_CONFIG_DIR: claudeDir, CLAUDE_CODE_EXECPATH: fakeClaude(), FAKE_CLAUDE_LOG: log };
