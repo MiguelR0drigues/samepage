@@ -30,9 +30,10 @@ describe('slugify', () => {
 });
 
 describe('pasteMessage', () => {
-  it('is one line and carries the literal Windows npx path', () => {
+  it('is one line and tells Windows to put node on PATH and use npx.cmd', () => {
     const m = pasteMessage('http://t', 'c0de');
-    expect(m).toContain('C:\\Program Files\\nodejs\\npx.cmd');
+    expect(m).toContain('PATH="/c/Program Files/nodejs:$PATH" npx.cmd');
+    expect(m).toContain('$env:Path="C:\\Program Files\\nodejs;$env:Path"; npx.cmd');
     expect(m).not.toContain('\n');
   });
 });

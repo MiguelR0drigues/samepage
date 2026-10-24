@@ -1,16 +1,18 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { applyUpdate, dueForUpdate, UPDATE_EVERY_MS } from '../../integrations/claude-code/update.mjs';
+import { mergeHooks } from '../../integrations/claude-code/lib/settings.mjs';
+import { takeLock } from '../../integrations/claude-code/lib/state.mjs';
 
 const HOOK = fileURLToPath(new URL('../../integrations/claude-code/hook.mjs', import.meta.url));
 const ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const NOW = 1_000_000_000_000;
 let root: string, home: string, settingsFile: string;
-const CONFIG = JSON.stringify({ url: 'http://x', token: 't', folders: ['/c'], claudeToken: 'k' });
+const CONFIG = JSON.stringify({ url: 'http://localhost:9', token: 't', folders: ['/c'], claudeToken: 'k' });
 
 beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-update-'));
@@ -35,7 +37,7 @@ it('a newer version is written, hooks are re-applied and config.json is untouche
   const urls: string[] = [];
   const fetchFn = async (u: string) => { urls.push(u); return new Response(JSON.stringify({ version: '2', files: { 'hook.mjs': 'new', 'lib/a.mjs': 'a' } })); };
   expect(await apply(fetchFn as any)).toBe('updated');
-  expect(urls).toEqual(['http://x/client.json']);
+  expect(urls).toEqual(['http://localhost:9/client.json']);
   expect(fs.readFileSync(path.join(home, 'hook.mjs'), 'utf8')).toBe('new');
   expect(fs.readFileSync(path.join(home, 'lib', 'a.mjs'), 'utf8')).toBe('a');
   expect(fs.readFileSync(path.join(home, 'version'), 'utf8')).toBe('2');
@@ -44,6 +46,42 @@ it('a newer version is written, hooks are re-applied and config.json is untouche
   expect(settings.theme).toBe('dark');
   expect(settings.hooks.SessionStart[0].hooks[0]).toMatchObject({ command: 'node-bin', args: [path.join(home, 'hook.mjs'), 'session-start'] });
   expect(listing().filter((f) => f.endsWith('.tmp'))).toEqual([]);
+});
+
+it('keeps the node of the existing SamePage hook instead of the updater own', async () => {
+  fs.writeFileSync(settingsFile, JSON.stringify(mergeHooks({}, '/opt/node-shim/bin/node', path.join(home, 'hook.mjs'))));
+  expect(await apply(serve({ version: '2', files: { 'hook.mjs': 'new' } }))).toBe('updated');
+  const hooks = JSON.parse(fs.readFileSync(settingsFile, 'utf8')).hooks;
+  expect(Object.values(hooks).flatMap((g: any) => g.flatMap((x: any) => x.hooks.map((h: any) => h.command)))).toEqual(Array(4).fill('/opt/node-shim/bin/node'));
+});
+
+it.each(['http://example.com', 'ftp://x', 'not a url'])('refuses to fetch from %s', async (url) => {
+  fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify({ url, token: 't', folders: [] }));
+  let called = false;
+  expect(await apply((async () => { called = true; return new Response('{}'); }) as any)).toBe('failed');
+  expect(called).toBe(false);
+  expect(log()[0]).toContain('update failed');
+});
+
+it('a .bak that cannot be removed does not roll the files back under the new version', async () => {
+  fs.writeFileSync(settingsFile, '{}');
+  const rm = fs.rmSync;
+  const spy = vi.spyOn(fs, 'rmSync').mockImplementation(((p: any, o: any) => { if (String(p).endsWith('.bak')) throw new Error('locked'); return rm(p, o); }) as any);
+  try { expect(await apply(serve({ version: '2', files: { 'hook.mjs': 'new' } }))).toBe('updated'); } finally { spy.mockRestore(); }
+  expect(fs.readFileSync(path.join(home, 'hook.mjs'), 'utf8')).toBe('new');
+  expect(fs.readFileSync(path.join(home, 'version'), 'utf8')).toBe('2');
+});
+
+it('the updater process skips the run while another holds the update lock', () => {
+  fs.cpSync(path.dirname(HOOK), home, { recursive: true });
+  const run = () => spawnSync(process.execPath, [path.join(home, 'update.mjs')], { encoding: 'utf8', env: { ...process.env, SAMEPAGE_HOME: home, CLAUDE_CONFIG_DIR: path.dirname(settingsFile) } });
+  const release = takeLock(home, 'update')!;
+  expect(run().status).toBe(0);
+  expect(fs.existsSync(path.join(home, 'update-check.json'))).toBe(false);
+  release();
+  run();
+  expect(fs.existsSync(path.join(home, 'update-check.json'))).toBe(true);
+  expect(fs.existsSync(path.join(home, 'locks', 'update'))).toBe(false);
 });
 
 it('the same version changes nothing', async () => {

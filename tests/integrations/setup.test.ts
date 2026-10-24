@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { parseArgs, parseFolders, findClaude, findNode, joinTeam, readJsonObject, loginWindowCommand, defaultFolders } from '../../integrations/claude-code/setup.mjs';
+import { parseArgs, parseFolders, findClaude, findNode, joinTeam, readJsonObject, loginWindowCommand, defaultFolders, loginWindowEnv } from '../../integrations/claude-code/setup.mjs';
 
 let dir: string;
 beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-setup-')); });
@@ -95,6 +95,11 @@ it('loginWindowCommand opens a terminal per platform, null elsewhere', () => {
   expect(mac.args).toEqual(['-e', String.raw`tell application "Terminal" to do script "'/usr/bin/node' '/Users/o'\\''neil/.samepage/login.mjs'"`]);
   expect(loginWindowCommand('linux', '/usr/bin/node', '/h/login.mjs')).toEqual({ cmd: 'x-terminal-emulator', args: ['-e', '/usr/bin/node', '/h/login.mjs'] });
   expect(loginWindowCommand('freebsd', 'n', 'l')).toBeNull();
+});
+
+it('loginWindowEnv drops CLAUDE* and ANTHROPIC_* but keeps CLAUDE_CONFIG_DIR, SAMEPAGE_HOME and the rest', () => {
+  expect(loginWindowEnv({ CLAUDECODE: '1', CLAUDE_CODE_EXECPATH: 'x', ANTHROPIC_API_KEY: 'k', CLAUDE_CONFIG_DIR: '/c', SAMEPAGE_HOME: '/h', PATH: '/bin' }))
+    .toEqual({ CLAUDE_CONFIG_DIR: '/c', SAMEPAGE_HOME: '/h', PATH: '/bin' });
 });
 
 it('defaultFolders offers the stored folders, else the current folder', () => {

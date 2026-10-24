@@ -13,7 +13,8 @@ export const slugify = (name: string) =>
 export const pasteMessage = (origin: string, code: string) =>
   `Set up SamePage (our team memory) for me. Ask me my name and confirm that this folder holds company work. `
   + `Check that Node 22 or newer is installed and install the LTS if it is not (winget on Windows, Homebrew on macOS); `
-  + `on Windows, if npx is not found right after installing Node, use "C:\\Program Files\\nodejs\\npx.cmd" instead. `
+  + `on Windows, if npx or node is not found right after installing Node, put C:\\Program Files\\nodejs at the front of PATH in the same command and use npx.cmd `
+  + `(bash: PATH="/c/Program Files/nodejs:$PATH" npx.cmd ...; PowerShell: $env:Path="C:\\Program Files\\nodejs;$env:Path"; npx.cmd ...). `
   + `Then run: npx -y ${origin}/samepage-setup.tgz --join ${code} --name "<my name>" --folders "<this folder>". `
   + `If it says that name already exists, ask me whether that is me; if yes run it again with --same-person, if not ask me for a different name. `
   + `Tell me in one line what it did, and remind me to open a new session.`;

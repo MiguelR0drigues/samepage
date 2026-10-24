@@ -21,7 +21,7 @@ export async function runLogin(home, claude) {
 async function main() {
   const home = samepageHome();
   const config = readConfig(home);
-  const claude = config?.claudePath ?? findClaude();
+  const claude = findClaude() ?? config?.claudePath;
   if (!config || !claude) {
     console.error('Run setup first.');
     process.exit(1);

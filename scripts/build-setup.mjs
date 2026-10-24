@@ -25,6 +25,8 @@ try {
     fs.mkdirSync(path.dirname(path.join(stage, p)), { recursive: true });
     fs.writeFileSync(path.join(stage, p), content);
   }
+  // a syntax error in any script must fail the build, not ship to every teammate
+  for (const p of Object.keys(files).filter((f) => f.endsWith('.mjs'))) execFileSync(process.execPath, ['--check', path.join(stage, p)], { stdio: 'pipe' });
   const win = process.platform === 'win32';
   const out = execFileSync(win ? 'npm.cmd' : 'npm', ['pack', '--silent'], { cwd: stage, encoding: 'utf8', shell: win });
   const name = out.trim().split(/\r?\n/).pop();

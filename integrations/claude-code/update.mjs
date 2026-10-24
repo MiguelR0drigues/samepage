@@ -4,9 +4,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { claudeDir, samepageHome } from './lib/paths.mjs';
-import { mergeHooks } from './lib/settings.mjs';
-import { log, readConfig } from './lib/state.mjs';
-import { readJsonObject } from './setup.mjs';
+import { mergeHooks, ourHookCommand } from './lib/settings.mjs';
+import { log, readConfig, takeLock } from './lib/state.mjs';
+import { findNode, readJsonObject } from './setup.mjs';
 
 export const UPDATE_EVERY_MS = 86_400_000;
 
@@ -21,6 +21,9 @@ export function dueForUpdate(home, now) {
 // what the build emits: package.json, top-level scripts, lib/**; so never config.json, sessions/, a stream (:) or a path outside home
 const safePath = (/** @type {string} */ p) => /^(package\.json|[\w.-]+\.mjs|lib\/[\w./-]+)$/.test(p) && !p.split('/').some((seg) => !seg || seg === '.' || seg === '..');
 
+// the client file is fetched from config.url: never over plain http except to this machine
+const safeUrl = (/** @type {string} */ u) => { const { protocol, hostname } = new URL(u); return protocol === 'https:' || (protocol === 'http:' && ['localhost', '127.0.0.1'].includes(hostname)); };
+
 /**
  * @param {{ home: string, settingsFile: string, nodePath: string, fetchFn?: typeof fetch, now: number }} o
  * @returns {Promise<'updated' | 'current' | 'failed'>}
@@ -31,6 +34,7 @@ export async function applyUpdate({ home, settingsFile, nodePath, fetchFn = fetc
   try {
     const config = readConfig(home);
     if (!config) throw new Error('no config.json');
+    if (!safeUrl(config.url)) throw new Error('config.url is not https');
     const res = await fetchFn(`${config.url}/client.json`);
     if (!res.ok) throw new Error(`client.json answered ${res.status}`);
     const { version, files } = /** @type {any} */ (await res.json());
@@ -41,7 +45,9 @@ export async function applyUpdate({ home, settingsFile, nodePath, fetchFn = fetc
     if (fs.existsSync(versionFile) && fs.readFileSync(versionFile, 'utf8').trim() === version) return 'current';
 
     // read before anything is replaced: an invalid settings.json must fail the update, not half-apply it
-    const hooks = JSON.stringify(mergeHooks(readJsonObject(settingsFile), nodePath, path.join(home, 'hook.mjs')), null, 2);
+    const settings = readJsonObject(settingsFile);
+    const hookPath = path.join(home, 'hook.mjs');
+    const hooks = JSON.stringify(mergeHooks(settings, ourHookCommand(settings, hookPath) ?? nodePath, hookPath), null, 2);
     /** @type {[string, string][]} */
     const writes = Object.entries(files).map(([p, content]) => [path.join(home, ...p.split('/')), content]);
     writes.push([settingsFile, hooks]);
@@ -59,7 +65,7 @@ export async function applyUpdate({ home, settingsFile, nodePath, fetchFn = fetc
       fs.renameSync(`${file}.${process.pid}.tmp`, file);
     }
     fs.writeFileSync(versionFile, version); // last: a failed update is retried
-    for (const { bak } of done) if (bak) fs.rmSync(bak, { force: true });
+    try { for (const { bak } of done) if (bak) fs.rmSync(bak, { force: true }); } catch { /* best effort: the version is written, a rollback now would mix versions */ }
     return 'updated';
   } catch (e) {
     // all or nothing: a new hook.mjs next to an old lib/ could fail to load and end every later update
@@ -75,8 +81,12 @@ export async function applyUpdate({ home, settingsFile, nodePath, fetchFn = fetc
 // realpath: matches setup.mjs
 if (process.argv[1] && import.meta.url === pathToFileURL(fs.realpathSync(process.argv[1])).href) {
   const home = samepageHome();
+  const release = takeLock(home, 'update'); // two session starts must not run two updaters
   try {
-    fs.writeFileSync(path.join(home, 'update-check.json'), JSON.stringify({ checkedAt: Date.now() }));
-    await applyUpdate({ home, settingsFile: path.join(claudeDir(), 'settings.json'), nodePath: process.execPath, now: Date.now() });
+    if (release) {
+      fs.writeFileSync(path.join(home, 'update-check.json'), JSON.stringify({ checkedAt: Date.now() }));
+      await applyUpdate({ home, settingsFile: path.join(claudeDir(), 'settings.json'), nodePath: findNode(), now: Date.now() });
+    }
   } catch { /* background job: nobody to tell */ }
+  release?.();
 }

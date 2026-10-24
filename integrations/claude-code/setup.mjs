@@ -124,6 +124,14 @@ export function loginWindowCommand(platform, nodePath, loginPath) {
 }
 
 /**
+ * The env for the login window: the session's, minus the CLAUDE_* and ANTHROPIC_* keys that change how `claude` behaves (like sanitizeEnv).
+ * @param {NodeJS.ProcessEnv} env
+ */
+export function loginWindowEnv(env) {
+  return Object.fromEntries(Object.entries(env).filter(([k]) => k === 'CLAUDE_CONFIG_DIR' || !/^(CLAUDE|ANTHROPIC_)/.test(k)));
+}
+
+/**
  * Joins the team and returns the new token, or the existing member's name when it is taken.
  * @param {string} url @param {string} code @param {string} name @param {boolean} existing @param {typeof fetch} [fetchFn]
  * @returns {Promise<{ token: string, name: string } | { taken: string }>}
@@ -179,7 +187,7 @@ async function login(/** @type {string} */ home, /** @type {string} */ claude, /
   if (process.stdin.isTTY) { await runLogin(home, claude); return; }
   const w = loginWindowCommand(process.platform, findNode(), path.join(home, 'login.mjs'));
   const opened = w && await new Promise((resolve) => {
-    const child = spawn(w.cmd, w.args, { detached: true, stdio: 'ignore', windowsVerbatimArguments: true });
+    const child = spawn(w.cmd, w.args, { detached: true, stdio: 'ignore', windowsVerbatimArguments: true, env: loginWindowEnv(process.env) });
     child.once('error', () => resolve(false));
     child.once('spawn', () => { child.unref(); resolve(true); });
   });
@@ -233,7 +241,7 @@ async function install(args) {
 async function loginOnly() {
   const home = samepageHome();
   const config = readConfig(home);
-  const claude = config?.claudePath ?? findClaude();
+  const claude = findClaude() ?? config?.claudePath;
   if (!config || !claude) throw new Fail('Run setup first.');
   copyClient(home); // an older install may lack login.mjs
   await login(home, claude, config.url);
