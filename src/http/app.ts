@@ -7,8 +7,9 @@ import { buildMcpServer } from '../mcp/server';
 import { sessionSummary } from '../service/summary';
 import type { Store } from '../storage/store';
 import { extractorRoutes } from './extractor';
+import { joinRoutes } from './join';
 
-export interface Env { DATABASE_URL: string; DASHBOARD_SECRET?: string }
+export interface Env { DATABASE_URL: string; DASHBOARD_SECRET?: string; JOIN_CODE?: string }
 
 export async function sha256Hex(s: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
@@ -21,6 +22,8 @@ export function createApp(getStore: (env: Env) => Store) {
   app.get('/health', (c) => c.text('ok'));
   // Signs in with its own cookie, so it sits before the bearer middleware.
   app.route('/dashboard', dashboardRoutes(getStore));
+  // Public: the join code is the credential.
+  app.route('/join', joinRoutes(getStore));
 
   app.use('*', async (c, next) => {
     const token = /^Bearer (.+)$/.exec(c.req.header('Authorization') ?? '')?.[1];
