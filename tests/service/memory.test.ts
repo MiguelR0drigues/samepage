@@ -293,3 +293,50 @@ describe('progress tracking', () => {
     await expect(memory.setWorkstreamStatus(miguel, w.id, 'done')).rejects.toBeInstanceOf(MemoryError);
   });
 });
+
+describe('Memory workstreams', () => {
+  const workstream = (title = 'Launch site'): RecordInput => ({ type: 'workstream', title, content: 'Ship it.', area: 'marketing' });
+  const update = (workstreamId: string): RecordInput => ({ type: 'update', title: 'Step', content: 'Did a step.', area: 'marketing', workstreamId });
+
+  it('any team member can rename a workstream', async () => {
+    const w = await memory.record(miguel, workstream());
+    const renamed = await memory.renameWorkstream(joao, w.id, '  Launch v2 ');
+    expect(renamed.title).toBe('Launch v2');
+    expect(renamed.updatedBy).toBe('joao');
+    await expect(memory.renameWorkstream(joao, w.id, '   ')).rejects.toThrow('A title is required.');
+    await expect(memory.renameWorkstream(meet, w.id, 'X')).rejects.toBeInstanceOf(MemoryError);
+    const d = await memory.record(miguel, decision());
+    await expect(memory.renameWorkstream(joao, d.id, 'X')).rejects.toThrow('Entry not found');
+  });
+
+  it('merge moves the updates and closes the source', async () => {
+    const a = await memory.record(miguel, workstream('A'));
+    const b = await memory.record(miguel, workstream('B'));
+    await memory.record(miguel, update(a.id));
+    await memory.record(miguel, update(a.id));
+    await memory.record(miguel, update(b.id));
+    const target = await memory.mergeWorkstream(joao, a.id, b.id);
+    expect(target.id).toBe(b.id);
+    expect(await store.listEntries({ type: 'update', workstreamId: b.id })).toHaveLength(3);
+    expect(await store.listEntries({ type: 'update', workstreamId: a.id })).toHaveLength(0);
+    const src = await store.getEntry(a.id);
+    expect(src?.status).toBe('done');
+    expect(src?.resolutionNote).toBe(`Merged into ${b.id}`);
+  });
+
+  it('merge refuses itself, deleted and non-workstream targets', async () => {
+    const a = await memory.record(miguel, workstream('A'));
+    const b = await memory.record(miguel, workstream('B'));
+    const d = await memory.record(miguel, decision());
+    await memory.record(miguel, update(a.id));
+    await memory.record(miguel, update(a.id));
+    await expect(memory.mergeWorkstream(joao, a.id, a.id)).rejects.toThrow('cannot be merged into itself');
+    await expect(memory.mergeWorkstream(meet, a.id, b.id)).rejects.toBeInstanceOf(MemoryError);
+    await expect(memory.mergeWorkstream(joao, a.id, d.id)).rejects.toThrow('Entry not found');
+    await expect(memory.mergeWorkstream(joao, d.id, a.id)).rejects.toThrow('Entry not found');
+    await memory.remove(miguel, b.id);
+    await expect(memory.mergeWorkstream(joao, a.id, b.id)).rejects.toThrow('Entry not found');
+    expect(await store.listEntries({ type: 'update', workstreamId: a.id })).toHaveLength(2);
+    expect((await store.getEntry(a.id))?.status).toBe('in_progress');
+  });
+});
