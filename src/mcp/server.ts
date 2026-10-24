@@ -6,7 +6,10 @@ import type { Store } from '../storage/store';
 import { formatEntry } from './format';
 
 const INSTRUCTIONS = `Shared team memory: decisions, personal views, principles and explorations about the company.
-- These samepage tools ARE the team memory. Whenever the user asks, in any language, to record, save, remember or note something about the company, product or team ("regista", "guarda", "lembra-te", "anota"), or asks what the team decided or thinks, use them — not local files or your own memory.
+- These samepage tools are the team memory. When the user explicitly asks, in any language, to record or save something about the company, product or team for everyone ("regista", "guarda", "anota"), use record — not local files. When they ask what the team decided or thinks, use search_context.
+- Record only when explicitly asked; never on your own initiative. Personal preferences about how this user works (style, tools, habits) belong in your own memory, not here.
+- If it is unclear whether something is for the team or personal, or which type it is (decision needs a team verdict; principle = stable truth; view = one person's opinion; exploration = no conclusion), ask before recording.
+- After recording, say in one line what was saved and as which type, so the user can correct or delete it.
 - Before relevant work (architecture, product, marketing, positioning, roadmap), use search_context.
 - If your suggestion contradicts a recorded decision: still give the suggestion, but warn and present the facts — your suggestion and why, the recorded decision it contradicts, and its context (when, who, positions, arguments, consensus). Then always ask what to do. If the person decides to go against the decision, use propose_revision.
 - When told to record something ("record this", "we decided X with Y"), use record; use list_team to get the author ids.
