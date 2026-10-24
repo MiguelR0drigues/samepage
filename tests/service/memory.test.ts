@@ -97,6 +97,21 @@ describe('Memory.remove / correctText', () => {
     expect(after).toMatchObject({ status: 'under_review', deletedAt: null });
   });
 
+  it('removing an auto-captured entry with a reason stores a correction', async () => {
+    const e = await memory.record(miguel, decision({ type: 'view', sourceKind: 'claude_code', sourceRef: 'claude_code:s1' }));
+    await memory.remove(miguel, e.id, 'personal');
+    expect((await store.getEntry(e.id))?.deletedAt).not.toBeNull();
+    expect(await store.listCorrections('miguel', 10)).toMatchObject([{
+      verdict: 'personal', candidate: { type: 'view', title: 'Use Neon', content: 'We use Neon.', area: 'infra' },
+    }]);
+  });
+
+  it('a reason on an explicit entry stores nothing', async () => {
+    const e = await memory.record(miguel, decision());
+    await memory.remove(miguel, e.id, 'not_worth_recording');
+    expect(await store.listCorrections('miguel', 10)).toEqual([]);
+  });
+
   it('content of a non-decision can be corrected', async () => {
     const e = await memory.record(miguel, decision({ type: 'view' }));
     expect((await memory.correctText(miguel, e.id, { content: 'Better' })).content).toBe('Better');

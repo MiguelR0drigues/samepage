@@ -2,7 +2,7 @@ import type { Person } from '../domain/types';
 import type { Store } from '../storage/store';
 
 const MAX_CHARS = 2000;
-const flat = (s: string, max = Infinity) => s.replace(/\s+/g, ' ').trim().slice(0, max).trim();
+export const flat = (s: string, max = Infinity) => s.replace(/\s+/g, ' ').trim().slice(0, max).trim();
 const MAX_CHANGES = 8;
 
 export async function sessionSummary(store: Store, person: Person, now: Date): Promise<string> {

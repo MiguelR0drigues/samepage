@@ -1,4 +1,4 @@
-import type { Consensus, Entry, EntryType, NewEntry, Person, Position, SourceKind } from '../domain/types';
+import type { CandidateType, Consensus, Entry, EntryType, NewEntry, Person, Position, SourceKind } from '../domain/types';
 import type { Store } from '../storage/store';
 
 export class MemoryError extends Error {}
@@ -17,7 +17,9 @@ const NOT_ACTIVE = 'This decision is no longer active.';
 const isTeam = (actor: Person, authors: string[], sourceKind: SourceKind) =>
   authors.length >= 2 || (sourceKind === 'meet' && actor.isSystem);
 
-function assertHuman(actor: Person) {
+export const isCandidateType = (t: EntryType): t is CandidateType => ['decision', 'principle', 'view', 'exploration'].includes(t);
+
+export function assertHuman(actor: Person) {
   if (actor.isSystem) throw new MemoryError('A system actor cannot perform this action.');
 }
 
@@ -89,7 +91,7 @@ export class Memory {
     return this.store.updateEntry(id, { title, question, positions, consensusReason, content }, actor.id);
   }
 
-  async remove(actor: Person, id: string): Promise<void> {
+  async remove(actor: Person, id: string, reason?: 'personal' | 'not_worth_recording'): Promise<void> {
     await this.store.transaction(async (tx) => {
       const e = await load(tx, id, { forUpdate: true });
       assertAuthor(actor, e);
@@ -100,6 +102,11 @@ export class Memory {
       // Deleting an open proposal must not leave its target stuck in review.
       if (e.type === 'proposal' && e.status === 'open' && e.targetId) {
         await tx.updateEntry(e.targetId, { status: 'active' }, actor.id);
+      }
+      // Teaches the extractor what this person does not want captured.
+      if (reason && e.sourceKind === 'claude_code' && isCandidateType(e.type)) {
+        await tx.insertCorrection({ personId: actor.id, verdict: reason,
+          candidate: { type: e.type, title: e.title, content: e.content, area: e.area } });
       }
     });
   }
