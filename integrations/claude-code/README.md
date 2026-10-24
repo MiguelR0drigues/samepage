@@ -46,7 +46,7 @@ Commands are shown for bash and for PowerShell. In PowerShell use `curl.exe` (pl
    Prefix each with `DATABASE_URL="<direct string>"` in bash. Each command prints a token once. Give each person theirs through a private channel.
    Lost or leaked token: `npm run person:rotate -- <id>` prints a new one and the old one stops working immediately.
 4. Log in and set the secret: `npx wrangler login`, then `npx wrangler secret put DATABASE_URL` (paste the pooled string).
-5. Deploy: `npm run deploy`. Wrangler prints the Worker URL (`https://samepage.<account>.workers.dev`). That is the `SAMEPAGE_URL`. Current deployment: `https://samepage.samepage.workers.dev` (Scooli Cloudflare account).
+5. Deploy: `npm run deploy`. Wrangler prints the Worker URL (`https://samepage.<account>.workers.dev`). That is the `SAMEPAGE_URL`. Current deployment: `https://samepage.scooli.workers.dev` (Scooli Cloudflare account).
 6. Check it:
    - `curl https://<worker>/health` returns `ok` (PowerShell: `curl.exe https://<worker>/health`)
    - `curl -H "Authorization: Bearer <token>" https://<worker>/summary` returns the summary header (PowerShell: `curl.exe -H "Authorization: Bearer <token>" https://<worker>/summary`)
