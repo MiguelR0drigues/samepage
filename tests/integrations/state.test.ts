@@ -100,3 +100,10 @@ it('paths honour env overrides', () => {
   expect(samepageHome({})).toBe(path.join(os.homedir(), '.samepage'));
   expect(claudeDir({})).toBe(path.join(os.homedir(), '.claude'));
 });
+
+it('setClaudeToken keeps every other config field', () => {
+  st.writeConfig(home, { url: 'u', token: 't', folders: ['/a'], claudePath: '/c', claudeToken: null });
+  const before = st.readConfig(home);
+  st.setClaudeToken(home, 'sk-ant-x');
+  expect(st.readConfig(home)).toEqual({ ...before, claudeToken: 'sk-ant-x' });
+});

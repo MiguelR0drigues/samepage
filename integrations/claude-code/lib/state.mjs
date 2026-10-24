@@ -35,6 +35,12 @@ export function writeConfig(home, c) {
   if (process.platform !== 'win32') fs.chmodSync(file, 0o600);
 }
 
+/** Stores the Claude token, keeping the rest of config.json. @param {string} home @param {string} token */
+export function setClaudeToken(home, token) {
+  const c = readConfig(home);
+  if (c) writeConfig(home, { ...c, claudeToken: token });
+}
+
 /** @returns {SessionState} */
 const blankSession = () => ({
   transcriptPath: null, cwd: null, lastActivity: 0, processedLine: 0, processedAt: 0,
