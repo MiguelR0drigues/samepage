@@ -134,6 +134,12 @@ describe('Memory.supersede', () => {
     expect(outcome).toBe('superseded');
   });
 
+  it('source "meet" from a human does not make a team decision', async () => {
+    const old = await memory.record(miguel, decision(team));
+    const { outcome } = await memory.supersede(joao, old.id, decision({ authors: ['joao'], sourceKind: 'meet' }));
+    expect(outcome).toBe('proposal');
+  });
+
   it('only an active decision can be superseded', async () => {
     const old = await memory.record(miguel, decision());
     await memory.supersede(miguel, old.id, decision());
@@ -192,6 +198,15 @@ describe('proposals', () => {
     await expect(memory.rejectProposal(joao, proposal.id)).rejects.toThrow('You cannot close your own proposal.');
     expect((await store.getEntry(proposal.id))?.status).toBe('open');
     expect((await store.getEntry(old.id))?.status).toBe('under_review');
+  });
+
+  it('cannot close a proposal you recorded even if you are not an author', async () => {
+    const old = await memory.record(miguel, decision(team));
+    const { entry } = await memory.supersede(miguel, old.id, decision({ authors: ['joao'], title: 'Use Supabase' }));
+    expect(entry).toMatchObject({ type: 'proposal', recordedBy: 'miguel', authors: ['joao'] });
+    await expect(memory.acceptProposal(miguel, entry.id)).rejects.toThrow('You cannot close your own proposal.');
+    await expect(memory.rejectProposal(miguel, entry.id)).rejects.toThrow('You cannot close your own proposal.');
+    expect((await store.getEntry(entry.id))?.status).toBe('open');
   });
 
   it('cannot accept an already closed proposal', async () => {

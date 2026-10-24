@@ -114,3 +114,44 @@ describe('GET /summary', () => {
     expect(await res.text()).toContain('# Team memory (SamePage)');
   });
 });
+
+describe('GET /mcp', () => {
+  it('responds 405 instead of opening a never-ending stream', async () => {
+    const res = await app.request('/mcp', { headers: { Authorization: 'Bearer t-miguel' } });
+    expect(res.status).toBe(405);
+  });
+});
+
+describe('proposal flow through MCP', () => {
+  const propose = async () => {
+    await store.insertEntry({
+      type: 'decision', status: 'active', title: 'Use Neon', content: 'We use Neon.', area: 'infra', question: null, positions: null,
+      consensus: null, consensusReason: null, sourceKind: 'explicit', sourceRef: null, authors: ['miguel', 'joao'],
+      recordedBy: 'miguel', supersedesId: null, targetId: null, resolutionNote: null,
+    });
+    const [decision] = await store.listEntries({ type: 'decision' });
+    const created = text(await (await connect('t-joao')).callTool({
+      name: 'propose_revision', arguments: { decision_id: decision!.id, title: 'Use Supabase', suggestion: 'Switch.', justification: 'Cheaper' },
+    }));
+    return { decision: decision!, proposalId: created.replace('Created proposal ', '') };
+  };
+
+  it('the summary prints full ids that accept_proposal takes', async () => {
+    const { decision, proposalId } = await propose();
+    const summary = await (await app.request('/summary', { headers: { Authorization: 'Bearer t-miguel' } })).text();
+    expect(summary).toContain(`[${proposalId}]`);
+    const res = await (await connect('t-miguel')).callTool({ name: 'accept_proposal', arguments: { id: proposalId } });
+    expect(res.isError).toBeFalsy();
+    expect((await store.getEntry(decision.id))!.status).toBe('superseded');
+  });
+
+  it('a rejected proposal shows its note and what it revises', async () => {
+    const { decision, proposalId } = await propose();
+    const miguel = await connect('t-miguel');
+    await miguel.callTool({ name: 'reject_proposal', arguments: { id: proposalId, reason: 'Too risky' } });
+    const out = text(await miguel.callTool({ name: 'search_context', arguments: { query: 'Supabase' } }));
+    expect(out).toContain(`revises: ${decision.id}`);
+    expect(out).toContain('note: Too risky');
+    expect(out).not.toContain('recorded by:');
+  });
+});

@@ -28,6 +28,9 @@ export function createApp(getStore: (env: Env) => Store) {
     await next();
   });
 
+  // Stateless mode has no session to stream to: a GET would hang open forever.
+  app.get('/mcp', (c) => c.body(null, 405, { Allow: 'POST' }));
+
   app.all('/mcp', async (c) => {
     const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     await buildMcpServer(c.get('store'), c.get('person')).connect(transport);

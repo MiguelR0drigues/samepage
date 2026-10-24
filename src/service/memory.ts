@@ -13,7 +13,9 @@ type TextPatch = Partial<Pick<Entry, 'title' | 'question' | 'positions' | 'conse
 
 const NOT_ACTIVE = 'This decision is no longer active.';
 
-const isTeam = (authors: string[], sourceKind: SourceKind) => authors.length >= 2 || sourceKind === 'meet';
+// Only the system actor (Meet) speaks for the team when it records a meeting; a human claiming 'meet' does not.
+const isTeam = (actor: Person, authors: string[], sourceKind: SourceKind) =>
+  authors.length >= 2 || (sourceKind === 'meet' && actor.isSystem);
 
 function assertHuman(actor: Person) {
   if (actor.isSystem) throw new MemoryError('A system actor cannot perform this action.');
@@ -88,7 +90,7 @@ export class Memory {
     return this.store.transaction(async (tx) => {
       const old = await load(tx, oldId, { forUpdate: true });
       if (old.type !== 'decision' || old.status !== 'active') throw new MemoryError(NOT_ACTIVE);
-      if (isTeam(authors, next.sourceKind) || (old.authors.length === 1 && old.authors[0] === actor.id)) {
+      if (isTeam(actor, authors, next.sourceKind) || (old.authors.length === 1 && old.authors[0] === actor.id)) {
         const entry = await tx.insertEntry({ ...next, supersedesId: old.id });
         await tx.updateEntry(old.id, { status: 'superseded' }, actor.id);
         return { entry, outcome: 'superseded' as const };
@@ -124,7 +126,7 @@ export class Memory {
       const p = await load(tx, id, { forUpdate: true });
       if (p.type !== 'proposal') throw new MemoryError(`Entry not found: ${id}`);
       if (p.status !== 'open') throw new MemoryError('This proposal is already closed.');
-      if (p.authors.includes(actor.id)) throw new MemoryError('You cannot close your own proposal.');
+      if (p.authors.includes(actor.id) || p.recordedBy === actor.id) throw new MemoryError('You cannot close your own proposal.');
       return apply(tx, p);
     });
   }
