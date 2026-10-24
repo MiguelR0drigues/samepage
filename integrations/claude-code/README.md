@@ -28,6 +28,8 @@ Capture runs only in the folders you chose (and their subfolders). When a sessio
 - Type `/private` in a session and that session is never processed.
 - Type `/forget` and everything up to now that was not yet captured is dropped.
 - Entries can be deleted with a reason (`delete_entry`).
+- The desktop app shows these as "a hook blocked your prompt": that is expected, nothing reached Claude.
+- A session keeps the SamePage tools it had when it opened; after an update, start a new session to get new tools.
 
 Files, all under `~/.samepage/` (override with `SAMEPAGE_HOME`):
 - `capture.log`: one line per pass or failure (never conversation text); look here when nothing shows up.

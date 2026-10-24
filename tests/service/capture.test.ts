@@ -50,11 +50,27 @@ describe('Capture.apply', () => {
     expect(r.recorded).toEqual([]);
     expect(r.ignored).toBe(2);
     expect(r.pending).toHaveLength(2);
-    const pending = await Promise.all(r.pending.map((id) => store.getPending(id)));
+    const pending = await Promise.all(r.pending.map(({ id }) => store.getPending(id)));
     expect(pending.map((p) => p?.personId)).toEqual(['miguel', 'miguel']);
-    expect(pending.map((p) => p?.question)).toEqual(['Is A for the team?', 'Should "B" be recorded as a view for the team?']);
+    expect(r.pending.map((p) => p.question)).toEqual(pending.map((p) => p?.question));
     expect(pending[1]).toMatchObject({ sourceRef: 'claude_code:s1', candidate: { type: 'view', title: 'B', authors: ['miguel'] } });
     expect(await store.listEntries({})).toEqual([]);
+  });
+
+  it('a pending question names the subject, its origin and the date', async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const r = await capture.apply(miguel, x({ branch_hint: 'web@main', items: [
+      item({ certainty: 'medium', title: 'A', ask: 'Is A\n  for the team?' }),
+      item({ certainty: 'medium', title: 'B', type: 'view' }),
+    ] }));
+    expect(r.pending.map((p) => p.question)).toEqual([
+      `Is A for the team? — decision: "A" (from web@main, ${today})`,
+      `Should "B" be recorded as a view for the team? — view: "B" (from web@main, ${today})`,
+    ]);
+    const [n] = (await capture.apply(miguel, x({ items: [item({ certainty: 'medium', title: 'C', ask: 'q'.repeat(500) })] }))).pending;
+    expect(n!.question).toHaveLength(400);
+    const [m] = (await capture.apply(miguel, x({ items: [item({ certainty: 'medium', title: 'D', ask: 'Q?' })] }))).pending;
+    expect(m!.question).toBe(`Q? — decision: "D" (from a Claude Code session, ${today})`);
   });
 
   it('more than 5 items: the rest are ignored', async () => {
@@ -153,7 +169,7 @@ describe('Capture.apply', () => {
 
 describe('Capture.answerPending', () => {
   const ask = async (who: Person = miguel) =>
-    (await capture.apply(who, x({ items: [item({ certainty: 'medium', type: 'principle' })] }))).pending[0]!;
+    (await capture.apply(who, x({ items: [item({ certainty: 'medium', type: 'principle' })] }))).pending[0]!.id;
 
   it('answerPending record records the candidate and stores a company correction', async () => {
     const id = await ask();
@@ -161,6 +177,14 @@ describe('Capture.answerPending', () => {
     expect(pending).toMatchObject({ status: 'answered', answer: 'record' });
     expect(entry).toMatchObject({ type: 'principle', title: 'Use Neon', sourceKind: 'claude_code', sourceRef: 'claude_code:s1', authors: ['miguel'] });
     expect(await store.listCorrections('miguel', 10)).toMatchObject([{ verdict: 'company', candidate: { type: 'principle', title: 'Use Neon' } }]);
+  });
+
+  it('answerPending record with a type records it as that type; personal ignores it', async () => {
+    const { entry } = await capture.answerPending(miguel, await ask(), 'record', 'decision');
+    expect(entry).toMatchObject({ type: 'decision', title: 'Use Neon' });
+    expect(await store.listCorrections('miguel', 10)).toMatchObject([{ verdict: 'company', candidate: { type: 'decision' } }]);
+    await capture.answerPending(miguel, await ask(), 'personal', 'decision');
+    expect((await store.listCorrections('miguel', 10))[0]).toMatchObject({ verdict: 'personal', candidate: { type: 'principle' } });
   });
 
   it('answerPending personal stores a correction and records nothing', async () => {
@@ -193,8 +217,8 @@ describe('Capture.context', () => {
     const w = await capture.apply(miguel, x({ branch_hint: 'web-app@main', update }));
     const done = await memory.record(miguel, decision({ type: 'workstream', title: 'Done' }));
     await memory.setWorkstreamStatus(miguel, done.id, 'done');
-    await capture.answerPending(miguel, (await capture.apply(miguel, x({ items: [item({ certainty: 'medium' })] }))).pending[0]!, 'personal');
-    await capture.answerPending(joao, (await capture.apply(joao, x({ items: [item({ certainty: 'medium' })] }))).pending[0]!, 'skip');
+    await capture.answerPending(miguel, (await capture.apply(miguel, x({ items: [item({ certainty: 'medium' })] }))).pending[0]!.id, 'personal');
+    await capture.answerPending(joao, (await capture.apply(joao, x({ items: [item({ certainty: 'medium' })] }))).pending[0]!.id, 'skip');
 
     const c = await capture.context(miguel);
     expect(c.person).toBe('miguel');

@@ -31,10 +31,10 @@ export function handleHook(event, input, { home, env, now }) {
     const prompt = typeof input.prompt === 'string' ? input.prompt.trim() : '';
     if (prompt === '/private') {
       patch.private = true;
-      result = { stdout: block('SamePage: this conversation will not be captured.') };
+      result = { stdout: block('SamePage: OK, this conversation will not be captured. Nothing was sent to Claude.') };
     } else if (prompt === '/forget') {
       try { patch.skipUntilLine = transcriptPath ? readTranscript(transcriptPath, 0).endLine : 0; } catch { patch.skipUntilLine = 0; }
-      result = { stdout: block('SamePage: everything so far that was not captured yet will be skipped.') };
+      result = { stdout: block('SamePage: OK, everything so far that was not captured yet will be skipped. Nothing was sent to Claude.') };
     } else if (s.notice) {
       result = { stdout: JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: s.notice } }) };
       injected = s.notice;

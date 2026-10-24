@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { MID_SESSION_EVERY, MIN_USER_MESSAGES, MIN_CHARS, MAX_ITEMS, SWEEP_IDLE_MS, SWEEP_MAX_AGE_MS } from './limits.mjs';
+import { MID_SESSION_EVERY, MIN_USER_MESSAGES, MIN_CHARS, SWEEP_IDLE_MS, SWEEP_MAX_AGE_MS } from './limits.mjs';
 import { loadSession, saveSession, listSessions, takeLock, usageToday, addUsage, log } from './state.mjs';
 import { readTranscript, branchHint, buildExcerpt } from './transcript.mjs';
 import { SYSTEM_PROMPT, OUTPUT_SCHEMA, buildPrompt } from './policy.mjs';
@@ -80,7 +80,7 @@ export async function runPass(id, mode, { home, config, env, fetch, runClaude, n
     };
     const latest = loadSession(home, id);
     if (latest.private || latest.skipUntilLine > start) { log(home, `${tag}: dropped (privacy command during pass)`); return 'skipped'; }
-    /** @type {{ recorded: string[], proposals: string[], pending: string[], update: string | null }} */ let r;
+    /** @type {{ recorded: string[], proposals: string[], pending: { id: string, question: string }[], update: string | null }} */ let r;
     try {
       const res = await fetch(`${url}/extractor/apply`, { method: 'POST', headers, body: JSON.stringify(body), signal: signal() });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -91,13 +91,9 @@ export async function runPass(id, mode, { home, config, env, fetch, runClaude, n
     const notes = mode === 'final' ? [] : typeof out.progress === 'string' && out.progress ? [...s.notes, out.progress].slice(-10) : s.notes;
     /** @type {Record<string, unknown>} */ const patch = { processedLine: t.endLine, processedAt: now, notes };
     if (mode === 'mid' && r.pending?.length) {
-      // the server turns medium items into pending questions in order, up to its cap
-      const medium = items.slice(0, MAX_ITEMS).filter((i) => i.certainty === 'medium');
-      const asks = r.pending.map((pid, k) => {
-        const m = medium[k];
-        return `[${pid}] ${m?.ask ?? `Should "${m?.title}" be recorded as a ${m?.type} for the team?`}`;
-      });
-      patch.notice = `SamePage has a question for you (answer with answer_pending): ${asks.join(' ')}`;
+      const asks = r.pending.map((p) => `[${p.id}] ${p.question}`).join('; ');
+      patch.notice = `SamePage has a question for you (answer with the SamePage tool answer_pending): ${asks}`
+        + ' If answer_pending is not among your SamePage tools (this session connected before SamePage was updated), tell the user the question will come back at the start of their next session.';
     }
     save(patch);
     log(home, `${tag}: recorded ${r.recorded?.length ?? 0}, proposals ${r.proposals?.length ?? 0}, pending ${r.pending?.length ?? 0}, update ${r.update ? 'yes' : 'no'}`);

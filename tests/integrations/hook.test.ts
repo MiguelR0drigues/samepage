@@ -55,7 +55,7 @@ it('no config: nothing happens', () => {
 
 it('/private blocks and marks the session private, and later session-end spawns nothing', () => {
   const r = run('prompt', { prompt: '/private\n' });
-  expect(JSON.parse(r.stdout!)).toEqual({ decision: 'block', reason: 'SamePage: this conversation will not be captured.' });
+  expect(JSON.parse(r.stdout!)).toEqual({ decision: 'block', reason: 'SamePage: OK, this conversation will not be captured. Nothing was sent to Claude.' });
   expect(loadSession(home, 's1').private).toBe(true);
   expect(run('session-end', {})).toEqual({});
   expect(run('stop', {})).toEqual({});
@@ -64,7 +64,7 @@ it('/private blocks and marks the session private, and later session-end spawns 
 it('/forget blocks and sets skipUntilLine to the transcript length', () => {
   transcript(7);
   const r = run('prompt', { prompt: ' /forget ' });
-  expect(JSON.parse(r.stdout!)).toEqual({ decision: 'block', reason: 'SamePage: everything so far that was not captured yet will be skipped.' });
+  expect(JSON.parse(r.stdout!)).toEqual({ decision: 'block', reason: 'SamePage: OK, everything so far that was not captured yet will be skipped. Nothing was sent to Claude.' });
   expect(loadSession(home, 's1').skipUntilLine).toBe(7);
   const s = loadSession(home, 's1');
   expect(s.cwd).toBe(cwd);

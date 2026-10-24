@@ -88,6 +88,7 @@ it('buildPrompt writes the sections in order and omits empty ones', () => {
 
 it('policy exports the system prompt and a schema with required items, progress and update', () => {
   expect(SYSTEM_PROMPT).toMatch(/^You extract team memory for SamePage/);
+  expect(SYSTEM_PROMPT).toContain('- ask (medium only): one short question to the person that names the subject explicitly; it is read later, outside this conversation, so never write "this" or "isto". For example: Should "Per-seat pricing" be recorded as a team decision?');
   expect(OUTPUT_SCHEMA.required).toEqual(['items', 'progress', 'update']);
   expect(OUTPUT_SCHEMA.properties.items.maxItems).toBe(5);
 });

@@ -18,14 +18,34 @@ beforeEach(async () => {
 });
 afterEach(() => { fs.rmSync(home, { recursive: true, force: true }); });
 
-it('a final pass records the high item and attaches the update to a workstream on the real server', async () => {
-  const app = createApp(() => store);
+const transcript = (n: number) => {
   const t = path.join(home, 't.jsonl');
-  fs.writeFileSync(t, Array.from({ length: 5 }, (_, i) => [
+  fs.writeFileSync(t, Array.from({ length: n }, (_, i) => [
     JSON.stringify({ type: 'user', cwd: '/w', gitBranch: 'main', message: { role: 'user', content: `u${i} ${'x'.repeat(300)}` } }),
     JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: `a${i} ${'x'.repeat(300)}` }] } }),
   ].join('\n')).join('\n') + '\n');
   saveSession(home, 's1', { ...loadSession(home, 's1'), transcriptPath: t, cwd: '/w' });
+};
+
+it('a mid pass notice carries the stored, self-contained question on the real server', async () => {
+  const app = createApp(() => store);
+  transcript(20);
+  const runClaude = async () => ({
+    items: [{ type: 'view', title: 'Per seat', content: 'Seats win.', area: 'pricing', certainty: 'medium', relation: 'new', related_id: null, authors: null, question: null, ask: 'Is it a team view?' }],
+    progress: 'p', update: null,
+  });
+  const config = { url: 'http://sp.test/', token: 't-miguel', folders: [], dailyLimit: 20, claudePath: null, claudeToken: 'oat' };
+  const fetch = (url: string, init?: RequestInit) => Promise.resolve(app.request(url, init));
+
+  expect(await runPass('s1', 'mid', { home, config, env: {}, fetch: fetch as any, runClaude, now: Date.now() })).toBe('done');
+  const [p] = await store.listPending('miguel');
+  expect(p!.question).toMatch(/^Is it a team view\? — view: "Per seat" \(from w@main, \d{4}-\d\d-\d\d\)$/);
+  expect(loadSession(home, 's1').notice).toContain(`[${p!.id}] ${p!.question} If answer_pending is not`);
+});
+
+it('a final pass records the high item and attaches the update to a workstream on the real server', async () => {
+  const app = createApp(() => store);
+  transcript(5);
   let context: any;
   const runClaude = async ({ prompt }: { prompt: string }) => {
     context = prompt;

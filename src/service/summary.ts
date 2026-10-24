@@ -32,7 +32,7 @@ export async function sessionSummary(store: Store, person: Person, now: Date): P
       return `- ${c.kind}: ${flat(c.entry.title)} (by ${c.kind === 'new' ? c.entry.recordedBy : c.entry.updatedBy})`;
     }), changes.length],
     ['Open proposals', proposalLines],
-    ['Pending for you', pending.map((p) => `- [${p.id}] ${flat(p.question, 200)}`)],
+    ['Pending for you', pending.map((p) => `- [${p.id}] ${flat(p.question, 300)}`)],
   ];
 
   const render = () => [

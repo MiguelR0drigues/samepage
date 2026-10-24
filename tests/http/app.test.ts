@@ -116,6 +116,15 @@ describe('MCP tools', () => {
     expect((await client.callTool({ name: 'answer_pending', arguments: { id: p.id, answer: 'skip' } })).isError).toBe(true);
   });
 
+  it('pending caps the question at 300 and answer_pending can record it as another type', async () => {
+    const candidate = { type: 'view' as const, title: 'Pricing view', content: 'Seats are better.', area: 'pricing' };
+    const p = await store.insertPending({ personId: 'miguel', candidate, question: 'q'.repeat(400), sourceRef: null });
+    const client = await connect('t-miguel');
+    expect(text(await client.callTool({ name: 'pending', arguments: {} }))).toBe(`[${p.id}] ${'q'.repeat(300)}\n  view: Pricing view — Seats are better.`);
+    await client.callTool({ name: 'answer_pending', arguments: { id: p.id, answer: 'record', type: 'decision' } });
+    expect(await store.listEntries({})).toMatchObject([{ type: 'decision', title: 'Pricing view' }]);
+  });
+
   it('answer_pending personal or skip records nothing', async () => {
     const candidate = { type: 'view' as const, title: 'Lunch', content: 'Pizza.', area: 'life' };
     const p = await store.insertPending({ personId: 'miguel', candidate, question: 'Q?', sourceRef: null });
@@ -236,6 +245,13 @@ describe('/extractor', () => {
     const [e] = await store.listEntries({});
     expect(r.recorded).toEqual([e!.id]);
     expect(e).toMatchObject({ sourceKind: 'claude_code', sourceRef: 's1', recordedBy: 'miguel' });
+  });
+
+  it('/extractor/apply returns pending ids with their questions', async () => {
+    const r = (await (await apply({ session_ref: 's1', items: [{ ...item, certainty: 'medium', ask: 'Is it?' }] })).json()) as { pending: { id: string; question: string }[] };
+    const [p] = await store.listPending('miguel');
+    expect(r.pending).toEqual([{ id: p!.id, question: p!.question }]);
+    expect(p!.question).toContain('Is it? — view: "Seats win"');
   });
 
   it('/extractor/apply rejects a malformed body with 400', async () => {

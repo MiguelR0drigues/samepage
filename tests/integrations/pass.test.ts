@@ -230,12 +230,13 @@ it('mid pass with medium items stores a notice', async () => {
   session('s1', { transcriptPath: transcript(20) });
   const medium = (title: string, ask?: string) => ({ type: 'view', title, content: 'c', area: 'a', certainty: 'medium', relation: 'new', ...(ask ? { ask } : {}) });
   const claudeOut = { items: [{ ...out.items[0], related_id: undefined, authors: undefined, ask: undefined }, medium('One', 'Was "One" a team view?'), medium('Two')], progress: 'p', update: out.update };
-  const { d, calls, claudeCalls } = deps({ claudeOut, applyResult: { ...applied, pending: ['p1', 'p2'] } });
+  const { d, calls, claudeCalls } = deps({ claudeOut, applyResult: { ...applied, pending: [{ id: 'p1', question: 'Q1 — view: "One" (from a Claude Code session, 2026-10-24)' }, { id: 'p2', question: 'Q2' }] } });
   expect(await runPass('s1', 'mid', d)).toBe('done');
   expect(claudeCalls[0].prompt).toContain('# Session update: not needed');
   expect(JSON.parse(calls[1]!.init.body).update).toBeNull();
   expect(loadSession(home, 's1').notice).toBe(
-    'SamePage has a question for you (answer with answer_pending): [p1] Was "One" a team view? [p2] Should "Two" be recorded as a view for the team?',
+    'SamePage has a question for you (answer with the SamePage tool answer_pending): [p1] Q1 — view: "One" (from a Claude Code session, 2026-10-24); [p2] Q2'
+    + ' If answer_pending is not among your SamePage tools (this session connected before SamePage was updated), tell the user the question will come back at the start of their next session.',
   );
 });
 

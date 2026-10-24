@@ -11,7 +11,7 @@ export interface ExtractedItem extends Candidate {
 }
 export interface SessionUpdate { title: string; content: string; area: string; workstream_id?: string; workstream_title?: string }
 export interface Extraction { session_ref: string; branch_hint?: string; items: ExtractedItem[]; update?: SessionUpdate | null }
-export interface CaptureResult { recorded: string[]; proposals: string[]; pending: string[]; ignored: number; update: string | null; workstream: string | null }
+export interface CaptureResult { recorded: string[]; proposals: string[]; pending: { id: string; question: string }[]; ignored: number; update: string | null; workstream: string | null }
 export interface ExtractorContext {
   person: string; people: { id: string; name: string }[];
   entries: { id: string; type: EntryType; status: EntryStatus; area: string; title: string; content: string; authors: string[] }[];
@@ -61,8 +61,10 @@ export class Capture {
         const candidate: Candidate = { ...item, authors: [...new Set([actor.id, ...(item.authors ?? []).filter((a) => humans.includes(a))])] };
         try {
           if (certainty === 'medium') {
-            const question = ask ?? `Should "${item.title}" be recorded as a ${item.type} for the team?`;
-            r.pending.push((await tx.insertPending({ personId: actor.id, candidate, question, sourceRef: x.session_ref })).id);
+            const q = ask?.trim() || `Should "${item.title}" be recorded as a ${item.type} for the team?`;
+            // read later and outside the conversation: it must name its subject and origin
+            const question = flat(`${q} — ${item.type}: "${item.title}" (from ${x.branch_hint ?? 'a Claude Code session'}, ${new Date().toISOString().slice(0, 10)})`, 400);
+            r.pending.push({ id: (await tx.insertPending({ personId: actor.id, candidate, question, sourceRef: x.session_ref })).id, question });
             continue;
           }
           const input: RecordInput = { ...candidate, sourceKind: 'claude_code', sourceRef: x.session_ref };
@@ -98,18 +100,19 @@ export class Capture {
     });
   }
 
-  async answerPending(actor: Person, id: string, answer: PendingAnswer): Promise<{ pending: Pending; entry: Entry | null }> {
+  async answerPending(actor: Person, id: string, answer: PendingAnswer, type?: CandidateType): Promise<{ pending: Pending; entry: Entry | null }> {
     assertHuman(actor);
     return this.store.transaction(async (tx) => {
       const p = UUID.test(id) ? await tx.getPending(id, { forUpdate: true }) : null;
       if (!p || p.personId !== actor.id) throw new MemoryError(`Pending question not found: ${id}`);
       if (p.status !== 'open') throw new MemoryError('This question was already answered.');
+      const candidate = answer === 'record' && type ? { ...p.candidate, type } : p.candidate;
       const entry = answer === 'record'
-        ? await new Memory(tx).record(actor, { ...p.candidate, sourceKind: 'claude_code', sourceRef: p.sourceRef ?? undefined })
+        ? await new Memory(tx).record(actor, { ...candidate, sourceKind: 'claude_code', sourceRef: p.sourceRef ?? undefined })
         : null;
-      const { type, title, area } = p.candidate;
+      const { title, area } = candidate;
       await tx.insertCorrection({ personId: actor.id, verdict: VERDICT[answer],
-        candidate: answer === 'personal' ? { type, title, area, content: '' } : p.candidate });
+        candidate: answer === 'personal' ? { type: candidate.type, title, area, content: '' } : candidate });
       return { pending: await tx.answerPending(id, answer, new Date()), entry };
     });
   }

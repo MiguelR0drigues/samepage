@@ -15,7 +15,7 @@ For each item:
 - certainty: how sure you are that it is about the company AND worth recording. high = clearly both; medium = plausible, you would ask the person; low = doubtful.
 - relation: new; updates (refines the person's own existing entry of the same type: give related_id and the full merged content); supersedes (replaces an active decision: give related_id).
 - authors: omit for the person alone. Add a teammate id only if the excerpt says that teammate took part.
-- ask (medium only): one short question to the person, for example: Was "X" a team decision worth sharing?
+- ask (medium only): one short question to the person that names the subject explicitly; it is read later, outside this conversation, so never write "this" or "isto". For example: Should "Per-seat pricing" be recorded as a team decision?
 Titles and content: short, self-contained, in the language of the conversation. Content: at most 3 sentences.
 Corrections are this person's past answers about what to record: follow them.
 

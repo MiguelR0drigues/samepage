@@ -106,8 +106,8 @@ describe('sessionSummary', () => {
     await store.insertPending({ personId: 'miguel', candidate: { type: 'view', title: 'T', content: 'c', area: 'a' }, question: 'q'.repeat(4000), sourceRef: null });
     const text = await sessionSummary(store, miguel, new Date());
     expect(text).toContain('## Principles\n- Keep it small: Prefer small changes.');
-    expect(text).toContain(`] ${'q'.repeat(200)}\n`);
-    expect(text).not.toContain('q'.repeat(201));
+    expect(text).toContain(`] ${'q'.repeat(300)}\n`);
+    expect(text).not.toContain('q'.repeat(301));
   });
 
   it('deleted principles and decisions are not listed', async () => {

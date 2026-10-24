@@ -141,7 +141,7 @@ export function buildMcpServer(store: Store, actor: Person, summary: string | un
   }, () => run(async () => {
     const open = await store.listPending(actor.id);
     return open.length
-      ? open.map((p) => `[${p.id}] ${flat(p.question, 200)}\n  ${p.candidate.type}: ${p.candidate.title} — ${flat(p.candidate.content, 200)}`).join('\n')
+      ? open.map((p) => `[${p.id}] ${flat(p.question, 300)}\n  ${p.candidate.type}: ${p.candidate.title} — ${flat(p.candidate.content, 200)}`).join('\n')
       : 'No pending questions.';
   }));
 
@@ -150,9 +150,10 @@ export function buildMcpServer(store: Store, actor: Person, summary: string | un
     inputSchema: z.object({
       id,
       answer: z.enum(['record', 'personal', 'skip']).describe('record = about the company, save it; personal = personal, never save; skip = about the company but not worth saving'),
+      type: z.enum(['decision', 'principle', 'view', 'exploration']).optional().describe('Only with answer record: record it as this type instead, e.g. decision when the user says the team agreed'),
     }),
   }, (a) => run(async () => {
-    const { entry } = await new Capture(store).answerPending(actor, a.id, a.answer);
+    const { entry } = await new Capture(store).answerPending(actor, a.id, a.answer, a.type);
     return entry ? `Recorded ${entry.id}` : 'Noted: not recorded.';
   }));
 
