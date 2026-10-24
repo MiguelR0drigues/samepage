@@ -1,7 +1,9 @@
 import { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import type { Entry, Person } from '../domain/types';
+import { Capture } from '../service/capture';
 import { Memory, MemoryError, type RecordInput } from '../service/memory';
+import { flat } from '../service/summary';
 import type { Store } from '../storage/store';
 import { formatEntry } from './format';
 
@@ -14,7 +16,9 @@ const INSTRUCTIONS = `Shared team memory: decisions, personal views, principles 
 - If your suggestion contradicts a recorded decision: still give the suggestion, but warn and present the facts — your suggestion and why, the recorded decision it contradicts, and its context (when, who, positions, arguments, consensus). Then always ask what to do. If the person decides to go against the decision, use propose_revision.
 - When told to record something ("record this", "we decided X with Y"), use record; use list_team to get the author ids.
 - Never record personal matters or anything not about the company.
-- Exploration = an idea discussed without a conclusion; do not record it as a decision.`;
+- Exploration = an idea discussed without a conclusion; do not record it as a decision.
+- SamePage also captures automatically from these conversations (source: claude_code). If the user says such an entry was personal or not worth recording, delete it with delete_entry and that reason. The user can type /private to skip the whole conversation, or /forget to drop what was said since the last capture.
+- If the summary lists "Pending for you", ask those questions briefly at a natural moment (not in the middle of a task) and pass each answer to answer_pending.`;
 
 const limit = z.number().int().min(1).max(20).default(5).describe('Max results (1-20)');
 const id = z.string().describe('Entry id');
@@ -106,10 +110,34 @@ export function buildMcpServer(store: Store, actor: Person, summary?: string): M
 
   server.registerTool('delete_entry', {
     description: 'Delete an entry you authored.',
-    inputSchema: z.object({ id }),
+    inputSchema: z.object({
+      id,
+      reason: z.enum(['personal', 'not_worth_recording']).optional()
+        .describe('Only for entries SamePage captured automatically (source: claude_code): why it was wrong; this teaches the capture'),
+    }),
   }, (a) => run(async () => {
-    await memory.remove(actor, a.id);
+    await memory.remove(actor, a.id, a.reason);
     return `Deleted ${a.id}`;
+  }));
+
+  server.registerTool('pending', {
+    description: "List SamePage's open questions for you: things it captured automatically but was unsure about.",
+  }, () => run(async () => {
+    const open = await store.listPending(actor.id);
+    return open.length
+      ? open.map((p) => `[${p.id}] ${p.question}\n  ${p.candidate.type}: ${p.candidate.title} — ${flat(p.candidate.content, 200)}`).join('\n')
+      : 'No pending questions.';
+  }));
+
+  server.registerTool('answer_pending', {
+    description: "Answer one of SamePage's pending questions.",
+    inputSchema: z.object({
+      id,
+      answer: z.enum(['record', 'personal', 'skip']).describe('record = about the company, save it; personal = personal, never save; skip = about the company but not worth saving'),
+    }),
+  }, (a) => run(async () => {
+    const { entry } = await new Capture(store).answerPending(actor, a.id, a.answer);
+    return entry ? `Recorded ${entry.id}` : 'Noted: not recorded.';
   }));
 
   server.registerTool('supersede_decision', {

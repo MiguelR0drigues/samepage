@@ -4,6 +4,7 @@ import type { Person } from '../domain/types';
 import { buildMcpServer } from '../mcp/server';
 import { sessionSummary } from '../service/summary';
 import type { Store } from '../storage/store';
+import { extractorRoutes } from './extractor';
 
 export interface Env { DATABASE_URL: string }
 
@@ -27,6 +28,8 @@ export function createApp(getStore: (env: Env) => Store) {
     c.set('store', store);
     await next();
   });
+
+  app.route('/extractor', extractorRoutes());
 
   // Stateless mode has no session to stream to: a GET would hang open forever.
   app.get('/mcp', (c) => c.body(null, 405, { Allow: 'POST' }));

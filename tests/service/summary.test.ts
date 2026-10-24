@@ -89,6 +89,18 @@ describe('sessionSummary', () => {
     });
   });
 
+  it('shows pending questions for the person only', async () => {
+    const candidate = { type: 'view' as const, title: 'T', content: 'c', area: 'a' };
+    const mine = await store.insertPending({ personId: 'miguel', candidate, question: 'Is this about the company?', sourceRef: null });
+    await store.insertPending({ personId: 'joao', candidate, question: 'Joao only?', sourceRef: null });
+
+    const text = await sessionSummary(store, miguel, new Date());
+    expect(text).toContain('## Pending for you');
+    expect(text).toContain(`- [${mine.id}] Is this about the company?`);
+    expect(text).not.toContain('Joao only?');
+    expect(await sessionSummary(store, await fresh('joao'), new Date())).not.toContain('Is this about the company?');
+  });
+
   it('deleted principles and decisions are not listed', async () => {
     const p = await memory.record(miguel, { type: 'principle', title: 'Gone principle', content: 'x', area: 'p' });
     const d = await memory.record(miguel, { type: 'decision', title: 'Gone decision', content: 'x', area: 'a' });
