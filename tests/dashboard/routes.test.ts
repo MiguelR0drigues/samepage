@@ -94,7 +94,7 @@ describe('Home', () => {
     const body = await (await get(app, '/dashboard', await signIn(app, store, 'miguel'))).text();
     expect(body).toContain('Per-seat pricing');
     expect(body).toContain('by João');
-    expect(body).not.toMatch(/What's new[\s\S]*Mine[\s\S]*Timeline/);
+    expect(body).not.toMatch(/What's new[\s\S]*Mine[\s\S]*Decision timeline/);
   });
 
   it("a refresh in the same visit keeps what's new; the next visit starts after it", async () => {
@@ -106,7 +106,7 @@ describe('Home', () => {
     for (const part of ['HttpOnly', 'Path=/dashboard', 'Max-Age=1800']) expect(cookie).toContain(part);
     const again = await get(app, '/dashboard', `${session}; ${visitCookie(first)}`);
     expect(await again.text()).toContain('Per-seat pricing');
-    expect(await (await get(app, '/dashboard', session)).text()).not.toMatch(/What's new[\s\S]*Per-seat pricing[\s\S]*Timeline/);
+    expect(await (await get(app, '/dashboard', session)).text()).not.toMatch(/What's new[\s\S]*Per-seat pricing[\s\S]*Decision timeline/);
   });
 
   it('the dashboard and the MCP summary keep separate cursors', async () => {
@@ -143,7 +143,7 @@ describe('Home', () => {
     const e = await new Memory(store).record(joao, decision('Secret plan'));
     await new Memory(store).remove(joao, e.id);
     const body = await (await get(app, '/dashboard', await signIn(app, store, 'miguel'))).text();
-    expect(body).toContain('removed: decision');
+    expect(body).toContain('João removed a decision');
     expect(body).not.toContain('Secret plan');
   });
 
@@ -152,11 +152,11 @@ describe('Home', () => {
     const session = await signIn(app, store, 'miguel');
     const found = await (await get(app, '/dashboard?q=pricing', session)).text();
     expect(found).toContain('Search results');
-    expect(found).toMatch(/Search results[\s\S]*Per-seat pricing[\s\S]*Timeline/);
+    expect(found).toMatch(/Search results[\s\S]*Per-seat pricing[\s\S]*Decision timeline/);
     expect(await (await get(app, '/dashboard?q=zzzz', session)).text()).toContain('No results.');
     const home = await (await get(app, '/dashboard', session)).text();
     expect(home).not.toContain('Search results');
-    expect(home).toMatch(/Timeline[\s\S]*Per-seat pricing[\s\S]*active/);
+    expect(home).toMatch(/Decision timeline[\s\S]*Per-seat pricing[\s\S]*Active/);
   });
 
   it('filters search by area, with or without words', async () => {
@@ -180,10 +180,30 @@ describe('Home', () => {
 describe('nav', () => {
   it('shows how many proposals are open', async () => {
     const session = await signIn(app, store, 'miguel');
-    expect(await (await get(app, '/dashboard/team', session)).text()).not.toContain('Proposals <span class="pill');
+    expect(await (await get(app, '/dashboard/team', session)).text()).not.toContain('Proposals <span class="count"');
     const a = await new Memory(store).record(miguel, { ...decision('Per-seat pricing'), authors: ['miguel', 'joao'] });
     await new Memory(store).proposeRevision(joao, a.id, { title: 'Per-use pricing', content: 'Switch.', justification: 'y' });
-    expect(await (await get(app, '/dashboard/team', session)).text()).toContain('Proposals <span class="pill warn">1<span class="sr"> open</span></span>');
+    expect(await (await get(app, '/dashboard/team', session)).text()).toContain('Proposals <span class="count">1<span class="sr"> awaiting your verdict</span></span>');
+  });
+
+  it('the theme switch stores the choice and returns to the same page, never off-site', async () => {
+    const session = await signIn(app, store, 'miguel');
+    expect(await (await get(app, '/dashboard/team', session)).text()).toContain('<html lang="en"><head>');
+    const dark = await post(app, '/dashboard/theme', session, { theme: 'dark', back: '/dashboard/team?x=1' });
+    expect(dark.status).toBe(303);
+    expect(dark.headers.get('location')).toBe('/dashboard/team?x=1');
+    const cookie = /sp_theme=dark/.exec(dark.headers.get('set-cookie')!)![0];
+    const page = await (await get(app, '/dashboard/team', `${session}; ${cookie}`)).text();
+    expect(page).toContain('<html lang="en" data-theme="dark">');
+    expect(page.match(/<button name="theme"[^>]*>/g)).toEqual(['light', 'dark', 'system'].map((t) => expect.stringContaining(`value="${t}"`)));
+    expect(page).toMatch(/value="dark"[^>]*aria-pressed="true"/);
+    expect(page).toMatch(/value="light"[^>]*aria-pressed="false"/);
+    for (const back of ['https://evil.example', '//evil.example', '/dashboardx']) {
+      expect((await post(app, '/dashboard/theme', session, { theme: 'light', back })).headers.get('location')).toBe('/dashboard');
+    }
+    const system = await post(app, '/dashboard/theme', session, { theme: 'system', back: '/dashboard' });
+    expect(system.headers.get('set-cookie')).toContain('Max-Age=0');
+    expect(await (await get(app, '/dashboard', `${session}; sp_theme=bogus`)).text()).toContain('<html lang="en"><head>');
   });
 
   it('sign out clears the session cookie', async () => {
@@ -215,7 +235,7 @@ describe('decision page', () => {
     expect(res.status).toBe(200);
     const body = await res.text();
     for (const s of ['Miguel', 'João', 'per seat', 'per use', 'How do we charge?', 'We charge per seat.', '&lt;b&gt;predictable',
-      'majority', 'Why we went ahead without full consensus', 'We need a price for the landing page']) expect(body).toContain(s);
+      'Majority', 'Why we went ahead without full consensus', 'We need a price for the landing page']) expect(body).toContain(s);
     expect(body).not.toContain('<b>predictable');
   });
 
@@ -232,7 +252,7 @@ describe('decision page', () => {
     const p = await new Memory(store).proposeRevision(joao, a.id, { title: 'Per-use pricing', content: 'x', justification: 'y' });
     const body = await (await get(app, `/dashboard/entries/${a.id}`, await signIn(app, store, 'miguel'))).text();
     expect(body).toContain(`/dashboard/entries/${p.id}`);
-    expect(body).toContain('open');
+    expect(body).toContain('Open');
   });
 
   it('a proposal shows what it revises; other types render too; a workstream redirects', async () => {
@@ -304,13 +324,43 @@ describe('proposals', () => {
     expect((await store.getEntry(a.id))!.status).toBe('active');
     expect((await store.getEntry(p.id))!.resolutionNote).toBe('Too risky');
     const page = await (await get(app, `/dashboard/entries/${p.id}`, await signIn(app, store, 'miguel'))).text();
-    expect(page).toContain('rejected');
+    expect(page).toContain('Rejected');
     expect(page).toContain('Reason: Too risky');
   });
 
   it('a bad id is 404', async () => {
     const session = await signIn(app, store, 'miguel');
     for (const id of ['abc', 'a'.repeat(36)]) expect((await post(app, `/dashboard/proposals/${id}/accept`, session, {})).status).toBe(404);
+  });
+
+  it('tabs between open and rejected, and filters by words and area', async () => {
+    const { p } = await propose();
+    const m = await signIn(app, store, 'miguel');
+    const page = async (q: string) => (await (await get(app, `/dashboard/proposals${q}`, m)).text()).split('aria-label="Proposal status"')[1]!;
+    expect(await page('')).toContain('Per-use pricing');
+    expect(await page('?q=nothing-like-this')).toContain('No proposals match these filters.');
+    expect(await page('?area=pricing')).toContain('Per-use pricing');
+    expect(await page('?tab=rejected')).toContain('No rejected proposals yet.');
+    await post(app, `/dashboard/proposals/${p.id}/reject`, m, { reason: 'Too risky' });
+    expect(await page('')).toContain('No open proposals.');
+    expect(await page('?tab=rejected')).toMatch(/Per-use pricing[\s\S]*Reason: Too risky/);
+  });
+
+  it('Home puts proposals awaiting my verdict first and returns there after accepting', async () => {
+    const { p } = await propose();
+    const [m, j] = [await signIn(app, store, 'miguel'), await signIn(app, store, 'joao')];
+    const home = await (await get(app, '/dashboard', m)).text();
+    expect(home).toContain('1 proposal needs your verdict');
+    expect(home).toMatch(/Needs your verdict[\s\S]*Per-use pricing[\s\S]*Revises:[\s\S]*Per-seat pricing[\s\S]*Accept[\s\S]*What's new/);
+    expect(home).toContain('<b>Why:</b> y');
+    const theirs = await (await get(app, '/dashboard', j)).text();
+    expect(theirs).toContain('Nothing needs your verdict');
+    expect(theirs).not.toContain('<span class="count">');
+    expect(theirs).toMatch(/Your proposals, waiting on a teammate[\s\S]*Per-use pricing/);
+    const ok = await post(app, `/dashboard/proposals/${p.id}/accept`, m, { back: '/dashboard' });
+    expect(ok.headers.get('location')).toBe('/dashboard');
+    const offsite = await post(app, `/dashboard/proposals/${p.id}/reject`, m, { back: 'https://evil.example' });
+    expect(offsite.headers.get('location') ?? '').not.toContain('evil');
   });
 
   it('a proposal whose target was deleted shows (deleted), not the title', async () => {
@@ -344,16 +394,19 @@ describe('Who thinks what', () => {
     await m.record(joao, view('Joao on positioning', 'positioning'));
     await m.record(miguel, view('Miguel on pricing', 'pricing'));
     await m.record(miguel, { ...decision('Own the category'), area: 'positioning' });
-    const body = await (await get(app, '/dashboard/views', await signIn(app, store, 'miguel'))).text();
-    const positioning = section(body, '<h2>', 'positioning');
-    for (const s of ['Miguel', 'João', 'Miguel on positioning', 'Joao on positioning', 'Current decisions', 'Own the category']) {
+    const session = await signIn(app, store, 'miguel');
+    const areaOf = async (q: string) => (await (await get(app, `/dashboard/views${q}`, session)).text()).split('<h2 class="area-h">')[1]!;
+    // One area at a time; the most recently active one first.
+    const positioning = await areaOf('?area=positioning');
+    for (const s of ['Miguel', 'João', 'Miguel on positioning', 'Joao on positioning', 'Current decision', 'Own the category']) {
       expect(positioning).toContain(s);
     }
     expect(positioning).not.toContain('No view recorded yet.');
-    const pricing = section(body, '<h2>', 'pricing');
+    const pricing = await areaOf('');
+    expect(pricing.startsWith('pricing')).toBe(true);
     expect(pricing).toContain('Miguel on pricing');
     expect(pricing).toContain('No view recorded yet.');
-    expect(pricing).not.toContain('Current decisions');
+    expect(pricing).not.toContain('Current decision');
   });
 
   it('says so when there are no views', async () => {
@@ -374,10 +427,14 @@ describe('Team', () => {
     const [mCard, jCard] = [section(body, '<h3>', 'Miguel'), section(body, '<h3>', 'João')];
     expect(line(mCard, 'Working on:')).toContain('Launch site');
     expect(line(mCard, 'Last activity:')).toContain('Old thing');
-    expect(mCard).toMatch(/Done \(1\)[\s\S]*Old thing/);
     expect(mCard).not.toContain('Blocked:');
     expect(jCard).toMatch(/Blocked:[\s\S]*Pricing page/);
-    expect(jCard).not.toContain('Done (');
+    // The board puts each workstream in its status lane.
+    const lane = (label: string) => body.split(`${label}</span><span class="n">`)[1]!.split('class="lane"')[0]!;
+    expect(lane('In progress')).toContain('Launch site');
+    expect(lane('Blocked')).toContain('Pricing page');
+    expect(lane('Done')).toContain('Old thing');
+    expect(lane('Done')).not.toContain('Launch site');
   });
 
   it('Working on skips done workstreams, falls back to the latest open one; Last activity counts authored entries', async () => {

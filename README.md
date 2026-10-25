@@ -243,7 +243,7 @@ The dashboard is optional and never required: everything it does, your agent can
 
 Ask your agent to *"open the dashboard"*. It returns a sign-in link that works **once** and expires in **10 minutes**; opening it keeps you signed in for 30 days in that browser. No passwords, no emails.
 
-- **Home:** what's new since your last visit, search, timeline
+- **Home:** proposals waiting for your verdict (accept or reject right there), what's new since your last visit, search, timeline
 - **Decision:** the question, each person's position, the verdict, and its supersede history
 - **Proposals:** accept or reject
 - **Who thinks what:** views side by side

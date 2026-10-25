@@ -4,4 +4,6 @@ node_modules
 .env
 .env.*
 .neon
-public/
+# build output, except the fonts the dashboard serves
+public/*
+!public/fonts/
