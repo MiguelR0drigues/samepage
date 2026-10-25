@@ -32,6 +32,7 @@ export interface Store {
   getPending(id: string, opts?: { forUpdate?: boolean }): Promise<Pending | null>;
   listPending(personId: string, limit?: number): Promise<Pending[]>;   // open only, oldest first, default 20
   answerPending(id: string, answer: PendingAnswer, at: Date): Promise<Pending>;
+  discardPending(id: string, at: Date): Promise<void>;                // answered 'skip' with its text blanked
   insertCorrection(c: Pick<Correction, 'personId' | 'verdict' | 'candidate'>): Promise<Correction>;
   listCorrections(personId: string, limit: number): Promise<Correction[]>; // newest first
   transaction<T>(fn: (tx: Store) => Promise<T>): Promise<T>;

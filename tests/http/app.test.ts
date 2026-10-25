@@ -254,6 +254,14 @@ describe('/extractor', () => {
     expect(p!.question).toContain('Is it? — view: "Seats win"');
   });
 
+  it('/extractor/changes needs a since time and lists teammates\' changes', async () => {
+    expect((await app.request('/extractor/changes', { headers })).status).toBe(400);
+    const since = Date.now() - 1000;
+    await (await connect('t-joao')).callTool({ name: 'record', arguments: rec });
+    const res = await app.request(`/extractor/changes?since=${since}`, { headers });
+    expect(await res.json()).toEqual({ changes: ['new: Per-seat pricing (by joao)'] });
+  });
+
   it('/extractor/forget-session removes what the session recorded', async () => {
     await apply({ session_ref: 's1', items: [item] });
     const forget = (body: unknown) => app.request('/extractor/forget-session', { method: 'POST', headers, body: JSON.stringify(body) });

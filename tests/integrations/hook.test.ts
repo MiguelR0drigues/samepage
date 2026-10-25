@@ -165,3 +165,17 @@ it('hook.mjs prints the /off-record block end to end', () => {
   expect(JSON.parse(r.stdout).decision).toBe('block');
   expect(loadSession(home, 's9').private).toBe(true);
 });
+
+it("session-start stamps changesCheckedAt; a Stop 10 minutes later spawns a changes check from that time", () => {
+  run('session-start', { source: 'startup' });
+  expect(loadSession(home, 's1').changesCheckedAt).toBe(NOW);
+  expect(handleHook('stop', { session_id: 's1', cwd }, { home, env: {}, now: NOW + 60_000 })).toEqual({});
+  const later = NOW + 10 * 60_000;
+  expect(handleHook('stop', { session_id: 's1', cwd }, { home, env: {}, now: later }).spawn).toEqual([EXTRACT, '--changes', 's1', String(NOW)]);
+  expect(loadSession(home, 's1').changesCheckedAt).toBe(later);
+});
+
+it('a session first seen on Stop starts the changes clock instead of checking', () => {
+  expect(run('stop', {})).toEqual({});
+  expect(loadSession(home, 's1').changesCheckedAt).toBe(NOW);
+});

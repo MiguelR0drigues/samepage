@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { runPass, sweep, forgetSession } from '../../integrations/claude-code/lib/pass.mjs';
+import { runPass, sweep, forgetSession, checkChanges } from '../../integrations/claude-code/lib/pass.mjs';
 import { loadSession, saveSession, takeLock, addUsage } from '../../integrations/claude-code/lib/state.mjs';
 import { SYSTEM_PROMPT } from '../../integrations/claude-code/lib/policy.mjs';
 import { SWEEP_IDLE_MS, SWEEP_MAX_AGE_MS } from '../../integrations/claude-code/lib/limits.mjs';
@@ -281,4 +281,32 @@ it('sweep retries off-record removals instead of running a pass', async () => {
   const { d } = deps();
   await sweep('current', d, async (id: string) => { ran.push(`pass:${id}`); return 'done'; }, async (id: string) => { ran.push(`forget:${id}`); return 'done'; });
   expect(ran).toEqual(['forget:s1']);
+});
+
+it("checkChanges turns teammates' changes into a notice, appended to one already waiting", async () => {
+  session('s1', { notice: 'SamePage has a question for you.' });
+  const { d, calls } = deps({ applyResult: { changes: ['new: Per seat (by joao)', 'changed: ICP (by ana)'] } });
+  expect(await checkChanges('s1', NOW - 1000, d)).toBe('done');
+  expect(calls[0]!.url).toBe(`https://sp.test/extractor/changes?since=${NOW - 1000}`);
+  expect(loadSession(home, 's1').notice).toBe('SamePage has a question for you. SamePage: while this session ran, teammates changed the team memory: new: Per seat (by joao); changed: ICP (by ana). Tell the user if it affects the current work.');
+});
+
+it('checkChanges leaves the notice alone when nothing changed, and logs a failure', async () => {
+  session('s1');
+  expect(await checkChanges('s1', NOW, deps({ applyResult: { changes: [] } }).d)).toBe('done');
+  expect(loadSession(home, 's1').notice).toBeNull();
+  expect(await checkChanges('s1', NOW, deps({ applyStatus: 500 }).d)).toBe('failed');
+  expect(loadSession(home, 's1').notice).toBeNull();
+  expect(logText()).toContain('changes: failed: HTTP 500');
+});
+
+it('a dummy fact in an off-record session never leaves the machine', async () => {
+  session('s1', { private: true, offRecordPending: true });
+  const { d, calls, claudeCalls } = deps({ applyResult: { removed: 0, kept: 0, pending: 0 } });
+  await runPass('s1', 'mid', d);
+  await runPass('s1', 'final', d);
+  await forgetSession('s1', d);
+  expect(claudeCalls).toHaveLength(0);
+  expect(calls.map((c) => c.url)).toEqual(['https://sp.test/extractor/forget-session']);
+  expect(JSON.stringify(calls)).not.toContain(SECRET);
 });

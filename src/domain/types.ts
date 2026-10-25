@@ -17,7 +17,8 @@ export interface Entry {
 export type NewEntry = Omit<Entry, 'id' | 'createdAt' | 'updatedAt' | 'updatedBy' | 'deletedAt' | 'deletedBy'>;
 export interface Change { kind: 'new' | 'changed' | 'removed'; entry: Entry }
 export type CandidateType = 'decision' | 'principle' | 'view' | 'exploration';
-export interface Candidate { type: CandidateType; title: string; content: string; area: string; authors?: string[]; question?: string }
+// replaces: the active decision a confirmed decision supersedes.
+export interface Candidate { type: CandidateType; title: string; content: string; area: string; authors?: string[]; question?: string; replaces?: string }
 export type PendingAnswer = 'record' | 'personal' | 'skip';
 export interface Pending {
   id: string; personId: string; candidate: Candidate; question: string; sourceRef: string | null;

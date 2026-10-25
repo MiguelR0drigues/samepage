@@ -3,6 +3,7 @@ import { createTestDb } from '../helpers/db';
 import { PostgresStore } from '../../src/storage/postgres/store';
 import { Memory, MemoryError, type RecordInput } from '../../src/service/memory';
 import { Capture, type ExtractedItem, type Extraction } from '../../src/service/capture';
+import { sessionSummary } from '../../src/service/summary';
 import type { Person } from '../../src/domain/types';
 import type { Store } from '../../src/storage/store';
 
@@ -33,11 +34,20 @@ const update = { title: 'Shipped login', content: 'Login works.', area: 'web' };
 
 describe('Capture.apply', () => {
   it('high new item is recorded with source claude_code and the session ref', async () => {
-    const r = await capture.apply(miguel, x({ items: [item()] }));
+    const r = await capture.apply(miguel, x({ items: [item({ type: 'view' })] }));
     expect(r).toMatchObject({ proposals: [], pending: [], ignored: 0, update: null, workstream: null });
     expect(await store.getEntry(r.recorded[0]!)).toMatchObject({
-      type: 'decision', sourceKind: 'claude_code', sourceRef: 'claude_code:s1', authors: ['miguel'], recordedBy: 'miguel',
+      type: 'view', sourceKind: 'claude_code', sourceRef: 'claude_code:s1', authors: ['miguel'], recordedBy: 'miguel',
     });
+  });
+
+  it('a decision is never recorded directly: even at high certainty it waits for its author to confirm the wording', async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const r = await capture.apply(miguel, x({ items: [item(), item({ title: 'B' }), item({ title: 'C' })] }));
+    expect(r.recorded).toEqual([]);
+    expect(r.pending).toHaveLength(3);
+    expect(r.pending[0]!.question).toBe(`Did the team decide this: "We use Neon."? — decision: "Use Neon" (from a Claude Code session, ${today})`);
+    expect(await store.listEntries({})).toEqual([]);
   });
 
   it('low items are ignored and medium items become pending for the actor (max 2)', async () => {
@@ -74,18 +84,35 @@ describe('Capture.apply', () => {
   });
 
   it('more than 5 items: the rest are ignored', async () => {
-    const r = await capture.apply(miguel, x({ items: Array.from({ length: 7 }, (_, i) => item({ title: `D${i}` })) }));
+    const r = await capture.apply(miguel, x({ items: Array.from({ length: 7 }, (_, i) => item({ type: 'view', title: `D${i}` })) }));
     expect(r.recorded).toHaveLength(5);
     expect(r.ignored).toBe(2);
   });
 
-  it('supersedes on a team decision creates a proposal', async () => {
-    const old = await memory.record(miguel, decision({ authors: ['miguel', 'joao'] }));
-    const r = await capture.apply(miguel, x({ items: [item({ title: 'Use Supabase', relation: 'supersedes', related_id: old.id })] }));
-    expect(r.recorded).toEqual([]);
-    expect(r.proposals).toHaveLength(1);
-    expect(await store.getEntry(r.proposals[0]!)).toMatchObject({ type: 'proposal', targetId: old.id, sourceKind: 'claude_code' });
-    expect((await store.getEntry(old.id))?.status).toBe('under_review');
+  it('a superseding decision waits for confirmation, then supersedes or proposes', async () => {
+    const team = await memory.record(miguel, decision({ authors: ['miguel', 'joao'] }));
+    const mine = await memory.record(miguel, decision({ title: 'Use Postgres' }));
+    const r = await capture.apply(miguel, x({ items: [
+      item({ title: 'Use Supabase', relation: 'supersedes', related_id: team.id }),
+      item({ title: 'Use SQLite', relation: 'supersedes', related_id: mine.id }),
+    ] }));
+    expect(r).toMatchObject({ recorded: [], proposals: [] });
+    expect((await store.getPending(r.pending[0]!.id))?.candidate.replaces).toBe(team.id);
+    expect((await store.getEntry(team.id))?.status).toBe('active');
+
+    const proposal = (await capture.answerPending(miguel, r.pending[0]!.id, 'record')).entry;
+    expect(proposal).toMatchObject({ type: 'proposal', targetId: team.id, sourceKind: 'claude_code', sourceRef: 'claude_code:s1' });
+    expect((await store.getEntry(team.id))?.status).toBe('under_review');
+    const next = (await capture.answerPending(miguel, r.pending[1]!.id, 'record')).entry;
+    expect(next).toMatchObject({ type: 'decision', supersedesId: mine.id });
+    expect((await store.getEntry(mine.id))?.status).toBe('superseded');
+  });
+
+  it('a confirmed decision whose target changed meanwhile is recorded on its own', async () => {
+    const mine = await memory.record(miguel, decision());
+    const r = await capture.apply(miguel, x({ items: [item({ title: 'Use SQLite', relation: 'supersedes', related_id: mine.id })] }));
+    await memory.remove(miguel, mine.id);
+    expect((await capture.answerPending(miguel, r.pending[0]!.id, 'record')).entry).toMatchObject({ title: 'Use SQLite', supersedesId: null, status: 'active' });
   });
 
   it("updates merges into the actor's own view", async () => {
@@ -103,9 +130,9 @@ describe('Capture.apply', () => {
       item({ type: 'view', content: 'Mine.', relation: 'updates', related_id: v.id }),
       item({ content: 'New verdict.', relation: 'updates', related_id: d.id }),
     ] }));
-    expect(r.recorded).toHaveLength(2);
+    expect(r.recorded).toHaveLength(1);
+    expect(r.pending).toHaveLength(1);
     expect(r.recorded).not.toContain(v.id);
-    expect(r.recorded).not.toContain(d.id);
     expect((await store.getEntry(v.id))?.content).toBe('Joao view.');
     expect((await store.getEntry(d.id))?.content).toBe('We use Neon.');
   });
@@ -113,9 +140,9 @@ describe('Capture.apply', () => {
   it('unknown related_id and unknown authors degrade to a new entry by the actor', async () => {
     const p = await memory.record(miguel, decision({ type: 'principle' }));
     const r = await capture.apply(miguel, x({ items: [
-      item({ relation: 'supersedes', related_id: 'not-an-id', authors: ['ana'] }),
-      item({ relation: 'supersedes', related_id: '00000000-0000-0000-0000-000000000000' }),
-      item({ relation: 'supersedes', related_id: p.id, authors: ['meet'] }),
+      item({ type: 'view', relation: 'supersedes', related_id: 'not-an-id', authors: ['ana'] }),
+      item({ type: 'view', relation: 'supersedes', related_id: '00000000-0000-0000-0000-000000000000' }),
+      item({ type: 'view', relation: 'supersedes', related_id: p.id, authors: ['meet'] }),
     ] }));
     expect(r.recorded).toHaveLength(3);
     for (const id of r.recorded) expect((await store.getEntry(id))?.authors).toEqual(['miguel']);
@@ -157,7 +184,7 @@ describe('Capture.apply', () => {
       w.transaction = (fn) => s.transaction((tx) => fn(wrap(tx)));
       return w;
     };
-    await expect(new Capture(wrap(store)).apply(miguel, x({ items: [item({ title: 'A' }), item({ title: 'B' })] })))
+    await expect(new Capture(wrap(store)).apply(miguel, x({ items: [item({ type: 'view', title: 'A' }), item({ type: 'view', title: 'B' })] })))
       .rejects.toThrow('boom');
     expect(await store.listEntries({})).toEqual([]);
   });
@@ -242,16 +269,17 @@ describe('Capture.context', () => {
 });
 
 describe('Capture.forgetSession', () => {
-  it('removes what the session added, restores what it superseded, skips its pending questions', async () => {
+  it('removes what the session added, restores what it superseded, skips its open questions', async () => {
     const mine = await memory.record(miguel, decision({ title: 'Use Postgres' }));
     const team = await memory.record(miguel, decision({ title: 'Use Neon', authors: ['miguel', 'joao'] }));
     const r = await capture.apply(miguel, x({ items: [
+      item({ certainty: 'medium', type: 'principle', title: 'Maybe' }),
       item({ title: 'Use SQLite', relation: 'supersedes', related_id: mine.id }),
       item({ title: 'Use Supabase', relation: 'supersedes', related_id: team.id }),
       item({ type: 'view', title: 'Seats win' }),
-      item({ certainty: 'medium', title: 'Maybe' }),
     ], update }));
-    const other = await capture.apply(miguel, x({ session_ref: 'claude_code:s2', items: [item({ title: 'Kept' })] }));
+    for (const p of r.pending.slice(1)) await capture.answerPending(miguel, p.id, 'record');
+    await capture.apply(miguel, x({ session_ref: 'claude_code:s2', items: [item({ type: 'view', title: 'Kept' })] }));
     await store.insertPending({ personId: 'miguel', candidate: item(), question: 'Other?', sourceRef: 'claude_code:s2' });
 
     expect(await capture.forgetSession(miguel, 'claude_code:s1')).toEqual({ removed: 4, kept: 0, pending: 1 });
@@ -259,14 +287,37 @@ describe('Capture.forgetSession', () => {
     expect((await store.getEntry(team.id))!.status).toBe('active');
     expect((await store.listEntries({ limit: 50 })).map((e) => e.title).sort()).toEqual(['Kept', 'Shipped login', 'Use Neon', 'Use Postgres']);
     expect((await store.listPending('miguel')).map((p) => p.question)).toEqual(['Other?']);
-    expect(other.recorded).toHaveLength(1);
+  });
+
+  it('leaves no trace of the session text: a dummy fact reaches neither the store, an export nor a teammate', async () => {
+    const FACT = 'DUMMY-FACT-7f3a9c';
+    await capture.apply(miguel, x({ items: [
+      item({ type: 'view', title: `View ${FACT}`, content: FACT }),
+      item({ certainty: 'medium', type: 'principle', title: `Maybe ${FACT}`, content: FACT }),
+      item({ title: `Decision ${FACT}`, content: FACT }),
+    ], update: { ...update, content: FACT } }));
+    await capture.forgetSession(miguel, 'claude_code:s1');
+    expect(JSON.stringify(await store.exportAll())).not.toContain(FACT);
+    expect(JSON.stringify(await capture.context(joao))).not.toContain(FACT);
+    expect(await sessionSummary(store, joao, new Date())).not.toContain(FACT);
   });
 
   it('only touches entries the actor recorded, and keeps one it cannot remove', async () => {
-    const r = await capture.apply(miguel, x({ items: [item({ title: 'Use Neon', authors: ['miguel', 'joao'] })] }));
-    await capture.apply(joao, x({ items: [item({ title: 'Joao only' })] }));
-    await memory.proposeRevision(joao, r.recorded[0]!, { title: 'Use Supabase', content: 'Cheaper.', justification: 'Cost.' });
+    const r = await capture.apply(miguel, x({ items: [item({ authors: ['miguel', 'joao'] })] }));
+    const neon = (await capture.answerPending(miguel, r.pending[0]!.id, 'record')).entry!;
+    await capture.apply(joao, x({ items: [item({ type: 'view', title: 'Joao only' })] }));
+    await memory.proposeRevision(joao, neon.id, { title: 'Use Supabase', content: 'Cheaper.', justification: 'Cost.' });
     expect(await capture.forgetSession(miguel, 'claude_code:s1')).toEqual({ removed: 0, kept: 1, pending: 0 });
-    expect((await store.listEntries({ type: 'decision' })).map((e) => e.title).sort()).toEqual(['Joao only', 'Use Neon']);
+    expect((await store.listEntries({ limit: 50 })).map((e) => e.title).sort()).toEqual(['Joao only', 'Use Neon', 'Use Supabase']);
+  });
+});
+
+describe('Capture.changes', () => {
+  it("lists teammates' decision, principle and proposal changes since a time, not the actor's own", async () => {
+    const since = new Date(Date.now() - 1000);
+    await memory.record(joao, decision({ title: 'Per seat' }));
+    await memory.record(joao, decision({ type: 'view', title: 'Just a view' }));
+    await memory.record(miguel, decision({ title: 'Mine' }));
+    expect(await capture.changes(miguel, since)).toEqual(['new: Per seat (by joao)']);
   });
 });

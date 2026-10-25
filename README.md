@@ -74,10 +74,10 @@ flowchart LR
 ```
 
 1. **At session start**, the MCP server sends a short summary (≤ 2,000 characters) with the server instructions: principles, recent decisions, what changed since your last session, open proposals, and questions waiting for you.
-2. **While you work**, your agent searches the memory before architecture, product or marketing work. If it is about to suggest something that contradicts a recorded decision, it still makes the suggestion, but shows you the decision, who made it and why, and asks what to do.
+2. **While you work**, your agent searches the memory before architecture, product or marketing work. If it is about to suggest something that contradicts a recorded decision, it still makes the suggestion, but shows you the decision, who made it and why, and asks what to do. If a teammate changes a decision, principle or proposal meanwhile, your agent hears about it on your next prompt (checked at most every 10 minutes).
 3. **When you say so** ("record this: we decided X with Y"), the agent calls `record` directly.
 4. **When a session ends** (or goes idle, or after every 15 of your messages in long sessions), a local `claude -p` pass reads the new messages and keeps only what the team would want to know later. The bar is high: most sessions produce nothing.
-5. **When the extractor isn't sure** something is about the company, it doesn't guess. It creates a *pending question* that your agent asks you at a natural moment. Your answers are kept as corrections, so the extractor learns.
+5. **When the extractor isn't sure** something is about the company, it doesn't guess. It creates a *pending question* that your agent asks you at a natural moment. **Decisions it infers always wait for you:** you confirm the wording before they reach the team. Your answers are kept as corrections, so the extractor learns.
 
 ### The data model
 

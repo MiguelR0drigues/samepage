@@ -8,4 +8,5 @@ export const SWEEP_IDLE_MS = process.env.SAMEPAGE_SWEEP_IDLE_MS ? Number(process
 export const SWEEP_MAX_AGE_MS = 3 * 24 * 3600_000;
 export const CLAUDE_TIMEOUT_MS = 180_000;
 export const LOCK_STALE_MS = 10 * 60_000;
+export const CHANGES_EVERY_MS = 10 * 60_000;
 export const MAX_ITEMS = 5;
