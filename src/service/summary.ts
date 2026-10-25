@@ -1,9 +1,14 @@
-import type { Person } from '../domain/types';
+import type { Change, Person } from '../domain/types';
 import type { Store } from '../storage/store';
 
 const MAX_CHARS = 2000;
 export const flat = (s: string, max = Infinity) => s.replace(/\s+/g, ' ').trim().slice(0, max).trim();
-const MAX_CHANGES = 8;
+export const MAX_CHANGES = 8;
+
+export function changeLine(c: Change): string {
+  if (c.kind === 'removed') return `removed: ${c.entry.type} [${c.entry.id}] (by ${c.entry.deletedBy})`; // no title: it was deleted on purpose
+  return `${c.kind}: ${flat(c.entry.title)} (by ${c.kind === 'new' ? c.entry.recordedBy : c.entry.updatedBy})`;
+}
 
 export async function sessionSummary(store: Store, person: Person, now: Date): Promise<string> {
   const principles = await store.listEntries({ type: 'principle', status: 'active' });
@@ -27,10 +32,7 @@ export async function sessionSummary(store: Store, person: Person, now: Date): P
   const sections: [string, string[], number?][] = [
     ['Principles', principles.map((e) => `- ${flat(e.title)}: ${flat(e.content, 200)}`)],
     ['Recent decisions', decisions.map((e) => `- [${e.id}] ${flat(e.title)} (${e.area}, ${e.createdAt.toISOString().slice(0, 10)})`)],
-    ['New since your last session', changes.slice(0, MAX_CHANGES).map((c) => {
-      if (c.kind === 'removed') return `- removed: ${c.entry.type} [${c.entry.id}] (by ${c.entry.deletedBy})`; // no title: it was deleted on purpose
-      return `- ${c.kind}: ${flat(c.entry.title)} (by ${c.kind === 'new' ? c.entry.recordedBy : c.entry.updatedBy})`;
-    }), changes.length],
+    ['New since your last session', changes.slice(0, MAX_CHANGES).map((c) => `- ${changeLine(c)}`), changes.length],
     ['Open proposals', proposalLines],
     ['Pending for you', pending.map((p) => `- [${p.id}] ${flat(p.question, 300)}`)],
   ];

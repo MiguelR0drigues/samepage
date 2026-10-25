@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { readConfig, loadSession, saveSession } from './state.mjs';
 import { isCompanyFolder } from './folders.mjs';
 import { readTranscript } from './transcript.mjs';
-import { MID_SESSION_EVERY } from './limits.mjs';
+import { MID_SESSION_EVERY, CHANGES_EVERY_MS } from './limits.mjs';
 
 const EXTRACT = fileURLToPath(new URL('../extract.mjs', import.meta.url));
 export const LOGIN_NOTE = (/** @type {string} */ url) => `SamePage capture is off until you approve the Claude login: run npx -y ${url}/samepage-setup.tgz --login`;
@@ -53,9 +53,16 @@ export function handleHook(event, input, { home, env, now }) {
         if (readTranscript(transcriptPath, Math.max(s.processedLine, s.skipUntilLine)).userCount >= MID_SESSION_EVERY) result = { spawn: [EXTRACT, id, 'mid'] };
       } catch { /* transcript not readable yet: try again on the next Stop */ }
     }
+    // reading teammates' changes is not capture: private sessions get them too
+    if (!result.spawn && !s.changesCheckedAt) patch.changesCheckedAt = now;
+    else if (!result.spawn && now - s.changesCheckedAt >= CHANGES_EVERY_MS) {
+      result = { spawn: [EXTRACT, '--changes', id, String(s.changesCheckedAt)] };
+      patch.changesCheckedAt = now;
+    }
   } else if (event === 'session-end') {
     if (!s.private) result = { spawn: [EXTRACT, id, 'final'] };
   } else if (event === 'session-start') {
+    patch.changesCheckedAt = now; // the session summary covers everything up to now
     result = { spawn: [EXTRACT, '--sweep', id] };
   }
 

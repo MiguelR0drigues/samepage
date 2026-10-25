@@ -43,7 +43,7 @@ it('a mid pass notice carries the stored, self-contained question on the real se
   expect(loadSession(home, 's1').notice).toContain(`[${p!.id}] ${p!.question} If answer_pending is not`);
 });
 
-it('a final pass records the high item and attaches the update to a workstream on the real server', async () => {
+it('a final pass turns the decision into a question for its author and attaches the update to a workstream on the real server', async () => {
   const app = createApp(() => store);
   transcript(5);
   let context: any;
@@ -60,10 +60,10 @@ it('a final pass records the high item and attaches the update to a workstream o
 
   expect(await runPass('s1', 'final', { home, config, env: {}, fetch: fetch as any, runClaude, now: Date.now() })).toBe('done');
   expect(context).toContain('# You extract for: miguel');
-  const [decision] = await store.listEntries({ type: 'decision' });
-  expect(decision).toMatchObject({ title: 'Per seat', sourceKind: 'claude_code', sourceRef: 'claude_code:s1', authors: ['miguel'] });
+  expect(await store.listEntries({ type: 'decision' })).toEqual([]);
+  expect(await store.listPending('miguel')).toMatchObject([{ sourceRef: 'claude_code:s1', candidate: { type: 'decision', title: 'Per seat', authors: ['miguel'] } }]);
   const [w] = await store.listEntries({ type: 'workstream' });
   expect(w).toMatchObject({ title: 'Pricing', sourceRef: 'branch:w@main' });
   expect((await store.listEntries({ type: 'update' }))[0]).toMatchObject({ title: 'Pricing', workstreamId: w!.id });
-  expect(fs.readFileSync(path.join(home, 'capture.log'), 'utf8')).toMatch(/s1 final: recorded 1, proposals 0, pending 0, update yes\n$/);
+  expect(fs.readFileSync(path.join(home, 'capture.log'), 'utf8')).toMatch(/s1 final: recorded 0, proposals 0, pending 1, update yes\n$/);
 });

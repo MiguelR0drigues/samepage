@@ -206,6 +206,11 @@ export class PostgresStore implements Store {
     return row;
   }
 
+  async discardPending(id: string, at: Date) {
+    await this.db.update(pending).set({ status: 'answered', answer: 'skip', answeredAt: at, question: '',
+      candidate: { type: 'exploration', title: '', content: '', area: '' } }).where(eq(pending.id, id));
+  }
+
   async insertCorrection(c: Pick<Correction, 'personId' | 'verdict' | 'candidate'>) {
     const [row] = await this.db.insert(corrections).values(c).returning();
     return row!;

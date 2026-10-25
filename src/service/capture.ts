@@ -1,7 +1,7 @@
 import type { Candidate, CandidateType, CorrectionVerdict, Entry, EntryStatus, EntryType, Pending, PendingAnswer, Person } from '../domain/types';
 import type { Store } from '../storage/store';
 import { assertHuman, CANDIDATE_TYPES, Memory, MemoryError, type RecordInput } from './memory';
-import { flat } from './summary';
+import { changeLine, flat, MAX_CHANGES } from './summary';
 
 export const MAX_ITEMS = 5;
 export const MAX_PENDING = 2;
@@ -60,19 +60,21 @@ export class Capture {
         if (certainty === 'low' || (certainty === 'medium' && r.pending.length >= MAX_PENDING)) { r.ignored++; continue; }
         const candidate: Candidate = { ...item, authors: [...new Set([actor.id, ...(item.authors ?? []).filter((a) => humans.includes(a))])] };
         try {
-          if (certainty === 'medium') {
-            const q = ask?.trim() || `Should "${item.title}" be recorded as a ${item.type} for the team?`;
+          const related = await find(tx, related_id);
+          // A decision here is inferred from talk, never stated: its author confirms the wording first, whatever the certainty.
+          if (certainty === 'medium' || item.type === 'decision') {
+            const replaces = relation === 'supersedes' && item.type === 'decision' && related?.type === 'decision' && related.status === 'active' ? related.id : undefined;
+            const q = ask?.trim() || (item.type === 'decision'
+              ? `Did the team decide this: "${flat(item.content, 200)}"?`
+              : `Should "${item.title}" be recorded as a ${item.type} for the team?`);
             // read later and outside the conversation: it must name its subject and origin
             const question = flat(`${q} — ${item.type}: "${item.title}" (from ${x.branch_hint ?? 'a Claude Code session'}, ${new Date().toISOString().slice(0, 10)})`, 400);
-            r.pending.push({ id: (await tx.insertPending({ personId: actor.id, candidate, question, sourceRef: x.session_ref })).id, question });
+            const pending = await tx.insertPending({ personId: actor.id, candidate: replaces ? { ...candidate, replaces } : candidate, question, sourceRef: x.session_ref });
+            r.pending.push({ id: pending.id, question });
             continue;
           }
           const input: RecordInput = { ...candidate, sourceKind: 'claude_code', sourceRef: x.session_ref };
-          const related = await find(tx, related_id);
-          if (relation === 'supersedes' && item.type === 'decision' && related?.type === 'decision' && related.status === 'active') {
-            const { entry, outcome } = await memory.supersede(actor, related.id, input);
-            (outcome === 'proposal' ? r.proposals : r.recorded).push(entry.id);
-          } else if (relation === 'updates' && related?.type === item.type && related.type !== 'decision' && related.authors.includes(actor.id)) {
+          if (relation === 'updates' && related?.type === item.type && related.authors.includes(actor.id)) {
             r.recorded.push((await memory.correctText(actor, related.id, { title: item.title, content: item.content })).id);
           } else {
             r.recorded.push((await memory.record(actor, input)).id);
@@ -100,7 +102,16 @@ export class Capture {
     });
   }
 
-  // /off-record: undoes what this person's session added. Text corrections it made to older entries ('updates') stay.
+  // Mid-session: what teammates changed that an agent may be acting on. Workstream progress and views can wait for the next session.
+  async changes(actor: Person, since: Date): Promise<string[]> {
+    assertHuman(actor);
+    return (await this.store.changesSince(since, actor.id))
+      .filter((c) => ['decision', 'principle', 'proposal'].includes(c.entry.type))
+      .slice(0, MAX_CHANGES).map(changeLine);
+  }
+
+  // /off-record: undoes what this person's session added and blanks its text. Text corrections it made to older entries
+  // ('updates') stay. shortcut: questions already answered 'record' keep their text in pending/corrections (no session link there); add one if that matters.
   async forgetSession(actor: Person, sessionRef: string): Promise<{ removed: number; kept: number; pending: number }> {
     assertHuman(actor);
     return this.store.transaction(async (tx) => {
@@ -117,12 +128,14 @@ export class Capture {
           continue;
         }
         r.removed++;
+        // off the record means the text goes too, not just out of sight (exports keep deleted rows)
+        await tx.updateEntry(e.id, { title: '', content: '', question: null, positions: null, consensusReason: null }, actor.id);
         const old = await find(tx, e.supersedesId);
         if (old?.status === 'superseded') await tx.updateEntry(old.id, { status: 'active' }, actor.id);
       }
       for (const p of await tx.listPending(actor.id, 100)) {
         if (p.sourceRef !== sessionRef) continue;
-        await tx.answerPending(p.id, 'skip', new Date());
+        await tx.discardPending(p.id, new Date());
         r.pending++;
       }
       return r;
@@ -136,9 +149,16 @@ export class Capture {
       if (!p || p.personId !== actor.id) throw new MemoryError(`Pending question not found: ${id}`);
       if (p.status !== 'open') throw new MemoryError('This question was already answered.');
       const candidate = answer === 'record' && type ? { ...p.candidate, type } : p.candidate;
-      const entry = answer === 'record'
-        ? await new Memory(tx).record(actor, { ...candidate, sourceKind: 'claude_code', sourceRef: p.sourceRef ?? undefined })
-        : null;
+      let entry: Entry | null = null;
+      if (answer === 'record') {
+        const { replaces, ...fields } = candidate;
+        const input: RecordInput = { ...fields, sourceKind: 'claude_code', sourceRef: p.sourceRef ?? undefined };
+        // the decision it replaces may have changed while the question waited: then it is recorded on its own
+        const old = fields.type === 'decision' ? await find(tx, replaces) : null;
+        entry = old?.type === 'decision' && old.status === 'active'
+          ? (await new Memory(tx).supersede(actor, old.id, input)).entry
+          : await new Memory(tx).record(actor, input);
+      }
       const { title, area } = candidate;
       await tx.insertCorrection({ personId: actor.id, verdict: VERDICT[answer],
         candidate: answer === 'personal' ? { type: candidate.type, title, area, content: '' } : candidate });

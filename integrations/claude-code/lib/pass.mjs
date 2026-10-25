@@ -131,6 +131,29 @@ export async function forgetSession(id, { home, config, fetch }) {
 }
 
 /**
+ * Turns what teammates changed since `since` into a notice for the next prompt.
+ * shortcut: a failed fetch skips that window (the hook already moved on); the next session summary still lists it.
+ * @param {string} id
+ * @param {number} since ms
+ * @param {PassDeps} deps
+ * @returns {Promise<PassResult>}
+ */
+export async function checkChanges(id, since, { home, config, fetch }) {
+  try {
+    const res = await fetch(`${config.url.replace(/\/+$/, '')}/extractor/changes?since=${since}`, {
+      headers: { Authorization: `Bearer ${config.token}` }, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const { changes } = await res.json();
+    if (!Array.isArray(changes) || !changes.length) return 'done';
+    const text = `SamePage: while this session ran, teammates changed the team memory: ${changes.join('; ')}. Tell the user if it affects the current work.`;
+    const s = loadSession(home, id);
+    saveSession(home, id, { ...s, notice: s.notice ? `${s.notice} ${text}` : text });
+    return 'done';
+  } catch (e) { log(home, `${id.slice(0, 8)} changes: failed: ${/** @type {Error} */ (e).message}`); return 'failed'; }
+}
+
+/**
  * Final passes for other sessions that went idle without SessionEnd, one at a time.
  * @param {string} currentId
  * @param {PassDeps} deps
