@@ -21,6 +21,10 @@ SamePage makes sure every teammate's agent knows what was decided, by whom, why,
 
 [Why](#why-samepage) · [How it works](#how-it-works) · [Quick start](#quick-start) · [Self-hosting](#self-hosting) · [MCP tools](#mcp-tools) · [Development](#development) · [Roadmap](#roadmap)
 
+<a href="docs/media/samepage-intro.mp4"><img src="docs/media/samepage-intro.jpg" alt="Watch the 30-second intro to SamePage" width="720"></a>
+
+▶ [Watch the 30-second intro](docs/media/samepage-intro.mp4)
+
 </div>
 
 ---
