@@ -62,7 +62,8 @@ export const readJsonObject = (/** @type {string} */ file) => {
 /** @param {string} name @returns {string[]} */
 function which(name) {
   try {
-    return (win ? execFileSync('where', [name], { encoding: 'utf8' }) : execFileSync('sh', ['-c', `command -v ${name}`], { encoding: 'utf8' }))
+    // windowsHide: the detached updater has no console, so `where` would open a terminal window
+    return (win ? execFileSync('where', [name], { encoding: 'utf8', windowsHide: true }) : execFileSync('sh', ['-c', `command -v ${name}`], { encoding: 'utf8' }))
       .split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   } catch { return []; }
 }
