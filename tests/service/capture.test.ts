@@ -240,3 +240,33 @@ describe('Capture.context', () => {
     await expect(capture.context(meet)).rejects.toBeInstanceOf(MemoryError);
   });
 });
+
+describe('Capture.forgetSession', () => {
+  it('removes what the session added, restores what it superseded, skips its pending questions', async () => {
+    const mine = await memory.record(miguel, decision({ title: 'Use Postgres' }));
+    const team = await memory.record(miguel, decision({ title: 'Use Neon', authors: ['miguel', 'joao'] }));
+    const r = await capture.apply(miguel, x({ items: [
+      item({ title: 'Use SQLite', relation: 'supersedes', related_id: mine.id }),
+      item({ title: 'Use Supabase', relation: 'supersedes', related_id: team.id }),
+      item({ type: 'view', title: 'Seats win' }),
+      item({ certainty: 'medium', title: 'Maybe' }),
+    ], update }));
+    const other = await capture.apply(miguel, x({ session_ref: 'claude_code:s2', items: [item({ title: 'Kept' })] }));
+    await store.insertPending({ personId: 'miguel', candidate: item(), question: 'Other?', sourceRef: 'claude_code:s2' });
+
+    expect(await capture.forgetSession(miguel, 'claude_code:s1')).toEqual({ removed: 4, kept: 0, pending: 1 });
+    expect((await store.getEntry(mine.id))!.status).toBe('active');
+    expect((await store.getEntry(team.id))!.status).toBe('active');
+    expect((await store.listEntries({ limit: 50 })).map((e) => e.title).sort()).toEqual(['Kept', 'Shipped login', 'Use Neon', 'Use Postgres']);
+    expect((await store.listPending('miguel')).map((p) => p.question)).toEqual(['Other?']);
+    expect(other.recorded).toHaveLength(1);
+  });
+
+  it('only touches entries the actor recorded, and keeps one it cannot remove', async () => {
+    const r = await capture.apply(miguel, x({ items: [item({ title: 'Use Neon', authors: ['miguel', 'joao'] })] }));
+    await capture.apply(joao, x({ items: [item({ title: 'Joao only' })] }));
+    await memory.proposeRevision(joao, r.recorded[0]!, { title: 'Use Supabase', content: 'Cheaper.', justification: 'Cost.' });
+    expect(await capture.forgetSession(miguel, 'claude_code:s1')).toEqual({ removed: 0, kept: 1, pending: 0 });
+    expect((await store.listEntries({ type: 'decision' })).map((e) => e.title).sort()).toEqual(['Joao only', 'Use Neon']);
+  });
+});

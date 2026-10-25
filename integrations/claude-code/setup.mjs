@@ -258,7 +258,7 @@ async function install(args) {
     runClaude(claude, ['mcp', 'add', '--scope', 'user', '--transport', 'http', 'samepage', `${url}/mcp`, '--header', `Authorization: Bearer ${token}`]);
   } catch { throw new Fail('Could not register SamePage with Claude Code ("claude mcp add" failed).'); }
 
-  console.log(`SamePage is set up. Capture runs in: ${folders.join('; ')}. Type /private in a session to skip it, /forget to drop what was not captured yet. Undo: npx -y ${url}/samepage-setup.tgz --uninstall`);
+  console.log(`SamePage is set up. Capture runs in: ${folders.join('; ')}. Type /off-record in a session to take it off the record, /forget to drop what was not captured yet. Undo: npx -y ${url}/samepage-setup.tgz --uninstall`);
 }
 
 async function loginOnly() {

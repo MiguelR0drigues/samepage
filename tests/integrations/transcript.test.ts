@@ -28,7 +28,7 @@ function fixture(): string {
     user('side text', { isSidechain: true }),
     user('<command-name>/clear</command-name>'),
     user([{ type: 'text', text: '<system-reminder>noise</system-reminder>second question' }]),
-    user('/private'),
+    user('/off-record'),
     user('/forget'),
     user('<system-reminder>only noise</system-reminder>'),
     user('This session is being continued from a previous conversation. Summary: forgotten text', { isCompactSummary: true }),

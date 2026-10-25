@@ -37,7 +37,7 @@ function transcript(messages: number) {
 }
 
 it('outside company folders: no output, no state, no spawn', () => {
-  expect(run('prompt', { cwd: path.join(home, 'other'), prompt: '/private' })).toEqual({});
+  expect(run('prompt', { cwd: path.join(home, 'other'), prompt: '/off-record' })).toEqual({});
   expect(run('session-end', { cwd: path.join(home, 'other') })).toEqual({});
   expect(listSessions(home)).toEqual([]);
 });
@@ -53,10 +53,11 @@ it('no config: nothing happens', () => {
   expect(listSessions(home)).toEqual([]);
 });
 
-it('/private blocks and marks the session private, and later session-end spawns nothing', () => {
-  const r = run('prompt', { prompt: '/private\n' });
-  expect(JSON.parse(r.stdout!)).toEqual({ decision: 'block', reason: 'SamePage: OK, this conversation will not be captured. Nothing was sent to Claude.' });
-  expect(loadSession(home, 's1').private).toBe(true);
+it('/off-record blocks, marks the session private, spawns the removal, and later session-end spawns nothing', () => {
+  const r = run('prompt', { prompt: '/off-record\n' });
+  expect(JSON.parse(r.stdout!)).toEqual({ decision: 'block', reason: 'SamePage: OK, this conversation is off the record: nothing more is captured and what was already captured from it is being removed. Nothing was sent to Claude.' });
+  expect(r.spawn).toEqual([EXTRACT, '--off-record', 's1']);
+  expect(loadSession(home, 's1')).toMatchObject({ private: true, offRecordPending: true });
   expect(run('session-end', {})).toEqual({});
   expect(run('stop', {})).toEqual({});
 });
@@ -127,9 +128,10 @@ it('a privacy command or a finished pass saved during a hook survives its save',
   expect(loadSession(home, 's1')).toMatchObject({ private: true, skipUntilLine: 3, processedLine: 4, notice: 'new', lastActivity: NOW });
 });
 
-it('/private and /forget still block when the state cannot be saved', () => {
+it('/off-record and /forget still block, and spawn nothing, when the state cannot be saved', () => {
   fs.writeFileSync(path.join(home, 'sessions'), 'not a folder');
-  for (const prompt of ['/private', '/forget']) {
+  for (const prompt of ['/off-record', '/forget']) {
+    expect(run('prompt', { prompt })).toEqual({ stdout: expect.any(String) });
     expect(JSON.parse(run('prompt', { prompt }).stdout!)).toEqual({
       decision: 'block', reason: 'SamePage: could not save this setting (state not writable); the conversation may still be captured.',
     });
@@ -156,8 +158,8 @@ it('hook.mjs exits 0 with no output on malformed stdin', () => {
   }
 });
 
-it('hook.mjs prints the /private block end to end', () => {
-  const input = JSON.stringify({ session_id: 's9', transcript_path: 'x', cwd, prompt: '/private' });
+it('hook.mjs prints the /off-record block end to end', () => {
+  const input = JSON.stringify({ session_id: 's9', transcript_path: 'x', cwd, prompt: '/off-record' });
   const r = spawnSync(process.execPath, [HOOK, 'prompt'], { input, encoding: 'utf8', env: { ...process.env, SAMEPAGE_HOME: home, SAMEPAGE_EXTRACTOR: '' } });
   expect(r.status).toBe(0);
   expect(JSON.parse(r.stdout).decision).toBe('block');

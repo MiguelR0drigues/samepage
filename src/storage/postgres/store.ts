@@ -108,6 +108,7 @@ export class PostgresStore implements Store {
       f.supersedesId ? eq(entries.supersedesId, f.supersedesId) : undefined,
       f.targetId ? eq(entries.targetId, f.targetId) : undefined,
       f.ids ? inArray(entries.id, f.ids) : undefined,
+      f.sourceRef ? eq(entries.sourceRef, f.sourceRef) : undefined,
     );
   }
 

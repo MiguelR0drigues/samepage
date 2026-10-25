@@ -104,16 +104,44 @@ export async function runPass(id, mode, { home, config, env, fetch, runClaude, n
 }
 
 /**
+ * /off-record: asks the server to remove what this session already added. Until it succeeds the
+ * session stays offRecordPending and the next sweep tries again.
+ * @param {string} id
+ * @param {PassDeps} deps
+ * @returns {Promise<PassResult>}
+ */
+export async function forgetSession(id, { home, config, fetch }) {
+  // a pass holding the lock may be past its privacy check and still applying: retry after it
+  const release = takeLock(home, id);
+  if (!release) return 'skipped';
+  const tag = `${id.slice(0, 8)} off-record`;
+  try {
+    const res = await fetch(`${config.url.replace(/\/+$/, '')}/extractor/forget-session`, {
+      method: 'POST', headers: { Authorization: `Bearer ${config.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_ref: `claude_code:${id}` }), signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const r = await res.json();
+    saveSession(home, id, { ...loadSession(home, id), offRecordPending: false });
+    log(home, `${tag}: removed ${r.removed ?? 0}, kept ${r.kept ?? 0}, pending ${r.pending ?? 0}`);
+    return 'done';
+  } catch (e) { log(home, `${tag}: failed: ${/** @type {Error} */ (e).message}`); return 'failed'; } finally {
+    release();
+  }
+}
+
+/**
  * Final passes for other sessions that went idle without SessionEnd, one at a time.
  * @param {string} currentId
  * @param {PassDeps} deps
  * @param {(id: string, mode: 'final', deps: PassDeps) => Promise<PassResult>} [pass]
  */
-export async function sweep(currentId, deps, pass = runPass) {
+export async function sweep(currentId, deps, pass = runPass, forget = forgetSession) {
   const { home, now } = deps;
   for (const id of listSessions(home)) {
     if (id === currentId) continue;
     const s = loadSession(home, id);
+    if (s.offRecordPending) { await forget(id, deps); continue; }
     const idle = now - s.lastActivity;
     if (s.lastActivity <= s.processedAt || idle < SWEEP_IDLE_MS || idle > SWEEP_MAX_AGE_MS) continue;
     try { await pass(id, 'final', deps); } catch (e) { log(home, `${id.slice(0, 8)} sweep: ${/** @type {Error} */ (e).message}`); }

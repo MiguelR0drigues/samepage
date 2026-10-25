@@ -41,5 +41,11 @@ export function extractorRoutes() {
     return c.json(await new Capture(c.get('store')).apply(c.get('person'), parsed.data));
   });
 
+  app.post('/forget-session', async (c) => {
+    const parsed = z.object({ session_ref: text.min(1) }).safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: parsed.error.issues[0]!.message }, 400);
+    return c.json(await new Capture(c.get('store')).forgetSession(c.get('person'), parsed.data.session_ref));
+  });
+
   return app;
 }
