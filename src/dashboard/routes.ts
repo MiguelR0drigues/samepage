@@ -6,13 +6,26 @@ import type { Env } from '../http/app';
 import { Memory, MemoryError } from '../service/memory';
 import type { Store } from '../storage/store';
 import { readSession, redeemLink, SESSION_TTL_S, sessionToken } from './auth';
-import { message, type Viewer } from './html';
+import { message, THEMES, type Theme, type Viewer } from './html';
 import { entryPage, homePage, proposalsPage, teamPage, viewsPage, workstreamPage } from './pages';
 
 export type DashVars = { store: Store; memory: Memory; person: Person; people: Person[]; openProposals: number };
 
-const viewer = (c: Context<{ Bindings: Env; Variables: DashVars }>): Viewer =>
-  ({ person: c.get('person'), people: c.get('people'), openProposals: c.get('openProposals') });
+const themeOf = (v: unknown): Theme => THEMES.find((t) => t === v) ?? 'system';
+const viewer = (c: Context<{ Bindings: Env; Variables: DashVars }>): Viewer => {
+  const url = new URL(c.req.url);
+  return { person: c.get('person'), people: c.get('people'), openProposals: c.get('openProposals'),
+    theme: themeOf(getCookie(c, 'sp_theme')), path: url.pathname + url.search };
+};
+
+// Proposals in one status, with the decision each one revises.
+async function proposalsWithTargets(store: Store, status: 'open' | 'rejected' = 'open') {
+  const proposals = await store.listEntries({ type: 'proposal', status, limit: 50 });
+  const ids = [...new Set(proposals.flatMap((p) => p.targetId ?? []))];
+  // One read for all targets; a deleted target is absent from the result.
+  const targets = new Map((ids.length ? await store.listEntries({ ids, limit: ids.length }) : []).map((e) => [e.id, e]));
+  return proposals.map((proposal) => ({ proposal, target: targets.get(proposal.targetId ?? '') ?? null }));
+}
 
 export const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const HISTORY_MAX = 10;
@@ -54,8 +67,9 @@ export function dashboardRoutes(getStore: (env: Env) => Store) {
     c.set('memory', new Memory(store));
     c.set('person', person);
     c.set('people', people);
-    // For the nav badge on every page.
-    c.set('openProposals', await store.countEntries({ type: 'proposal', status: 'open' }));
+    // For the nav badge on every page: only proposals this person can close.
+    const open = await store.listEntries({ type: 'proposal', status: 'open', limit: 50 });
+    c.set('openProposals', open.filter((p) => !p.authors.includes(person.id) && p.recordedBy !== person.id).length);
     await next();
   });
 
@@ -63,6 +77,16 @@ export function dashboardRoutes(getStore: (env: Env) => Store) {
     deleteCookie(c, 'sp_session', { path: '/dashboard', secure: true });
     deleteCookie(c, 'sp_visit', { path: '/dashboard' });
     return c.redirect('/dashboard', 303);
+  });
+
+  app.post('/theme', async (c) => {
+    const form = await c.req.parseBody();
+    const theme = themeOf(form.theme);
+    if (theme === 'system') deleteCookie(c, 'sp_theme', { path: '/dashboard' });
+    else setCookie(c, 'sp_theme', theme, { path: '/dashboard', sameSite: 'Lax', maxAge: 365 * 86_400 });
+    // Back to the page the switch was on, never to another site.
+    const back = typeof form.back === 'string' && /^\/dashboard(?:[/?]|$)/.test(form.back) ? form.back : '/dashboard';
+    return c.redirect(back, 303);
   });
 
   app.get('/', async (c) => {
@@ -81,7 +105,11 @@ export function dashboardRoutes(getStore: (env: Env) => Store) {
     const results = q || area ? await store.search(q, { area: area || undefined, limit: 20 }) : null;
     const timeline = await store.listEntries({ type: 'decision', limit: 20 });
     const areas = await store.listAreas();
-    const page = await homePage({ ...viewer(c), changes, q, area, areas, results, timeline });
+    const motions = await proposalsWithTargets(store);
+    // shortcut: last 100 workstreams only, fine for a small team; paginate if it grows
+    const workstreams = await store.listEntries({ type: 'workstream', limit: 100 });
+    const activeDecisions = await store.countEntries({ type: 'decision', status: 'active' });
+    const page = await homePage({ ...viewer(c), changes, since: cutoff, q, area, areas, results, timeline, motions, workstreams, activeDecisions });
     // Only after every read succeeded: a failed load must not lose the old cutoff.
     if (!resumed) await store.touchDashboardSeen(person.id, now);
     setCookie(c, 'sp_visit', cutoff.toISOString(), { httpOnly: true, path: '/dashboard', maxAge: VISIT_TTL_S });
@@ -118,29 +146,30 @@ export function dashboardRoutes(getStore: (env: Env) => Store) {
 
   app.get('/proposals', async (c) => {
     const store = c.get('store');
-    const proposals = await store.listEntries({ type: 'proposal', status: 'open', limit: 50 });
-    const ids = [...new Set(proposals.flatMap((p) => p.targetId ?? []))];
-    // One read for all targets; a deleted target is absent from the result.
-    const targets = new Map((ids.length ? await store.listEntries({ ids, limit: ids.length }) : []).map((e) => [e.id, e]));
-    const items = proposals.map((proposal) => ({ proposal, target: targets.get(proposal.targetId ?? '') ?? null }));
-    return c.html(await proposalsPage({ ...viewer(c), items }));
+    const tab = c.req.query('tab') === 'rejected' ? 'rejected' : 'open';
+    const items = await proposalsWithTargets(store);
+    const rejected = await proposalsWithTargets(store, 'rejected');
+    return c.html(await proposalsPage({ ...viewer(c), items, rejected, tab, q: (c.req.query('q') ?? '').trim(), area: c.req.query('area') ?? '' }));
   });
 
   app.post('/proposals/:id/:action{accept|reject}', async (c) => {
     const id = c.req.param('id');
     if (!ID.test(id)) return message(404, 'Not found.');
     const [memory, person] = [c.get('memory'), c.get('person')];
+    const form = await c.req.parseBody();
+    // Only two known pages: never redirect to a URL taken from the form.
+    const back = form.back === '/dashboard' ? '/dashboard' : '/dashboard/proposals';
     try {
       if (c.req.param('action') === 'accept') await memory.acceptProposal(person, id);
       else {
-        const reason = (await c.req.parseBody()).reason;
+        const reason = form.reason;
         await memory.rejectProposal(person, id, typeof reason === 'string' && reason.trim() ? reason.trim() : undefined);
       }
     } catch (e) {
-      if (e instanceof MemoryError) return message(400, e.message, { href: '/dashboard/proposals', label: 'Back to proposals' });
+      if (e instanceof MemoryError) return message(400, e.message, { href: back, label: 'Go back' });
       throw e;
     }
-    return c.redirect('/dashboard/proposals', 303);
+    return c.redirect(back, 303);
   });
 
   app.get('/views', async (c) => {
@@ -148,7 +177,7 @@ export function dashboardRoutes(getStore: (env: Env) => Store) {
     // shortcut: last 100 only, fine for a small team; paginate if it grows
     const views = await store.listEntries({ type: 'view', limit: 100 });
     const decisions = await store.listEntries({ type: 'decision', limit: 100 });
-    return c.html(await viewsPage({ ...viewer(c), views, decisions }));
+    return c.html(await viewsPage({ ...viewer(c), views, decisions, area: c.req.query('area') ?? '', q: (c.req.query('q') ?? '').trim() }));
   });
 
   app.get('/team', async (c) => {
