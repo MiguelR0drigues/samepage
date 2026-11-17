@@ -7,3 +7,9 @@ node_modules
 # build output, except the fonts the dashboard serves
 public/*
 !public/fonts/
+
+# local tooling output
+.claude/
+.impeccable/questions/
+.impeccable/review/
+brag-output/

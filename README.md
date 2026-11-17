@@ -326,10 +326,15 @@ The full design, including the reasoning behind each decision, is in [docs/super
 - [x] **Core:** storage interface, MCP server with per-person tokens, explicit recording, search, session summary, export/import
 - [x] **Dashboard:** read-mostly web UI with one-time link sign-in
 - [x] **Automatic capture in Claude Code:** hooks, local extractor, privacy controls, pending questions, corrections, workstream updates
+- [x] **Explicit vs inferred:** decisions the extractor infers wait for their author; teammates' changes reach a running session
+- [ ] **ChatGPT:** connect from ChatGPT in the browser (OAuth), same person and memory as in Claude Code
+- [ ] **Owner confirms:** a decision's owner confirms changes to it; another teammate's approval only in areas the team marks as joint (e.g. pricing, vision)
 - [ ] **Google Meet:** extract decisions from Gemini meeting notes in a shared folder, as a source of truth
-- [ ] **More agents:** Codex and Hermes (same local extractor), chat apps via an MCP connector, Gemini
-- [ ] Semantic search (embeddings as derived, regenerable data)
+- [ ] **Stale local copies:** when a decision is superseded, find the CLAUDE.md, prompt and skill files that still restate it
 - [ ] Private drafts ("only mine" until promoted)
+- [ ] **Current values by key** (pricing, ICP…): looked up directly, never by similarity
+- [ ] **More agents:** Codex and Hermes (same local extractor), Gemini
+- [ ] Semantic search over active entries only (embeddings as derived, regenerable data)
 
 ## Contributing
 
