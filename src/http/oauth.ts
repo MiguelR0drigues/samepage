@@ -45,7 +45,9 @@ export async function s256(verifier: string): Promise<string> {
   return btoa(String.fromCharCode(...digest)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-const isHttps = (u: string) => URL.canParse(u) && new URL(u).protocol === 'https:';
+// Registration is open, so only ChatGPT's own redirect host may get a consent page (no look-alike apps).
+const CHAT_APP_HOSTS = ['chatgpt.com'];
+const isChatApp = (u: string) => URL.canParse(u) && new URL(u).protocol === 'https:' && CHAT_APP_HOSTS.includes(new URL(u).hostname);
 
 export function oauthRoutes(getStore: (env: Env) => Store) {
   const app = new Hono<{ Bindings: Env }>();
@@ -78,7 +80,7 @@ export function oauthRoutes(getStore: (env: Env) => Store) {
   app.post('/oauth/register', async (c) => {
     const body = await c.req.json().catch(() => null) as { redirect_uris?: unknown; client_name?: unknown } | null;
     const uris = body?.redirect_uris;
-    if (!strings(uris) || !uris.length || !uris.every(isHttps)) return c.json({ error: 'invalid_redirect_uri' }, 400);
+    if (!strings(uris) || !uris.length || !uris.every(isChatApp)) return c.json({ error: 'invalid_redirect_uri' }, 400);
     const name = typeof body?.client_name === 'string' && body.client_name.trim() ? body.client_name.trim().slice(0, 80) : 'An app';
     const clientId = await issueClientId({ redirectUris: uris, name }, c.env.DASHBOARD_SECRET!);
     return c.json({ client_id: clientId, client_id_issued_at: Math.floor(Date.now() / 1000), client_name: name,

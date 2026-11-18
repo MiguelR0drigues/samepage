@@ -46,7 +46,7 @@ describe('OAuth discovery and registration', () => {
   });
 
   it('names an unnamed client "An app"', async () => {
-    const b = await (await register({ redirect_uris: ['https://x.example/cb'] })).json() as { client_id: string };
+    const b = await (await register({ redirect_uris: ['https://chatgpt.com/other'] })).json() as { client_id: string };
     expect((await readClientId(b.client_id, ENV.DASHBOARD_SECRET))!.name).toBe('An app');
   });
 
@@ -58,8 +58,16 @@ describe('OAuth discovery and registration', () => {
     }
   });
 
+  it('only registers ChatGPT redirect hosts, so a look-alike app cannot get a consent page', async () => {
+    for (const uri of ['https://chatgpt-connect.app/cb', 'https://chatgpt.com.evil.example/cb', 'https://evil.example/chatgpt.com']) {
+      const res = await register({ client_name: 'ChatGPT', redirect_uris: [uri] });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: 'invalid_redirect_uri' });
+    }
+  });
+
   it('does not accept a client id signed with another secret', async () => {
-    const b = await (await register({ redirect_uris: ['https://x.example/cb'] })).json() as { client_id: string };
+    const b = await (await register({ redirect_uris: ['https://chatgpt.com/other'] })).json() as { client_id: string };
     expect(await readClientId(b.client_id, 'other-secret')).toBeNull();
     expect(await readClientId('garbage', ENV.DASHBOARD_SECRET)).toBeNull();
   });
@@ -70,7 +78,7 @@ describe('OAuth discovery and registration', () => {
       expect(res.status).toBe(404);
       expect(await res.json()).toEqual({ error: 'oauth not configured' });
     }
-    expect((await register({ redirect_uris: ['https://x.example/cb'] }, NO_SECRET)).status).toBe(404);
+    expect((await register({ redirect_uris: ['https://chatgpt.com/other'] }, NO_SECRET)).status).toBe(404);
   });
 
   it('401 from /mcp names the resource metadata', async () => {
