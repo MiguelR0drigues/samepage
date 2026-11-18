@@ -149,6 +149,16 @@ You don't need to learn any commands. Talk to your agent normally:
 - *"That entry was personal, delete it."* → `delete_entry`
 - *"Open the dashboard."* → `open_dashboard`
 
+### Using SamePage from ChatGPT
+
+Teammates who also brainstorm in ChatGPT (browser) can use the same memory there, as the same person.
+
+1. Sign in to the dashboard once: ask Claude Code *"open the dashboard"*.
+2. In ChatGPT (a paid plan with developer mode), add a custom connector with the URL `https://<your-worker>/mcp` and OAuth.
+3. ChatGPT opens a SamePage page: *"Connect ChatGPT as <you>?"*. Choose **Allow**.
+
+In ChatGPT the memory is read freely, and saved **only when you ask** and only about your company (ChatGPT also asks you to confirm each save). Nothing is captured automatically there.
+
 ## Self-hosting
 
 SamePage runs on **Cloudflare Workers** (code) and **Neon** (Postgres), both on free tiers. A small team's daily use stays far below their limits; the one to watch is the Workers 10 ms CPU limit per request.
@@ -183,10 +193,16 @@ npx wrangler secret put DATABASE_URL
 npx wrangler secret put DASHBOARD_SECRET
 ```
 
-Paste the **pooled** string for `DATABASE_URL`, and a long random value for `DASHBOARD_SECRET` (it signs dashboard links and sessions):
+Paste the **pooled** string for `DATABASE_URL`, and a long random value for `DASHBOARD_SECRET` (it signs dashboard links and sessions, and the ChatGPT sign-in):
 
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+Optionally set your company's name, so agents (above all ChatGPT) save only what is about it:
+
+```bash
+npx wrangler secret put COMPANY_NAME
 ```
 
 **5. Deploy.** This first packs the installer into `public/samepage-setup.tgz` and the current client into `public/client.json`, which the Worker serves as static assets.
@@ -327,7 +343,7 @@ The full design, including the reasoning behind each decision, is in [docs/super
 - [x] **Dashboard:** read-mostly web UI with one-time link sign-in
 - [x] **Automatic capture in Claude Code:** hooks, local extractor, privacy controls, pending questions, corrections, workstream updates
 - [x] **Explicit vs inferred:** decisions the extractor infers wait for their author; teammates' changes reach a running session
-- [ ] **ChatGPT:** connect from ChatGPT in the browser (OAuth), same person and memory as in Claude Code
+- [x] **ChatGPT:** connect from ChatGPT in the browser (OAuth), same person and memory as in Claude Code
 - [ ] **Owner confirms:** a decision's owner confirms changes to it; another teammate's approval only in areas the team marks as joint (e.g. pricing, vision)
 - [ ] **Google Meet:** extract decisions from Gemini meeting notes in a shared folder, as a source of truth
 - [ ] **Stale local copies:** when a decision is superseded, find the CLAUDE.md, prompt and skill files that still restate it

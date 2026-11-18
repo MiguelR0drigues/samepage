@@ -8,8 +8,9 @@ import { sessionSummary } from '../service/summary';
 import type { Store } from '../storage/store';
 import { extractorRoutes } from './extractor';
 import { joinRoutes } from './join';
+import { oauthRoutes } from './oauth';
 
-export interface Env { DATABASE_URL: string; DASHBOARD_SECRET?: string; JOIN_CODE?: string }
+export interface Env { DATABASE_URL: string; DASHBOARD_SECRET?: string; JOIN_CODE?: string; COMPANY_NAME?: string }
 
 export async function sha256Hex(s: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
@@ -24,13 +25,18 @@ export function createApp(getStore: (env: Env) => Store) {
   app.route('/dashboard', dashboardRoutes(getStore));
   // Public: the join code is the credential.
   app.route('/join', joinRoutes(getStore));
+  // Public: OAuth discovery, registration and token exchange for chat apps.
+  app.route('/', oauthRoutes(getStore));
 
   app.use('*', async (c, next) => {
     const token = /^Bearer (.+)$/.exec(c.req.header('Authorization') ?? '')?.[1];
     const store = getStore(c.env);
     // Loaded fresh per request so the summary sees an up-to-date lastSeenAt.
     const person = token ? await store.findPersonByTokenHash(await sha256Hex(token)) : null;
-    if (!person) return c.json({ error: 'invalid token' }, 401);
+    if (!person) {
+      const meta = `${new URL(c.req.url).origin}/.well-known/oauth-protected-resource`;
+      return c.json({ error: 'invalid token' }, 401, { 'WWW-Authenticate': `Bearer resource_metadata="${meta}"` });
+    }
     c.set('person', person);
     c.set('store', store);
     await next();
@@ -49,7 +55,7 @@ export function createApp(getStore: (env: Env) => Store) {
     const summary = isInit ? await sessionSummary(c.get('store'), c.get('person'), new Date()) : undefined;
     const [store, person] = [c.get('store'), c.get('person')];
     const openDashboard = () => issueLink(store, person, new URL(c.req.url).origin, c.env.DASHBOARD_SECRET);
-    await buildMcpServer(store, person, summary, openDashboard).connect(transport);
+    await buildMcpServer(store, person, summary, openDashboard, c.env?.COMPANY_NAME?.trim() || undefined).connect(transport);
     // JSON (not SSE) so the response is complete when handleRequest resolves; the Worker closes its DB pool right after.
     return transport.handleRequest(c.req.raw);
   });

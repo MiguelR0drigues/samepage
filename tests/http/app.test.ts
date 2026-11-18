@@ -337,3 +337,23 @@ describe('proposal flow through MCP', () => {
     expect(out).not.toContain('recorded by:');
   });
 });
+
+describe('Tool metadata for chat apps', () => {
+  it('marks read-only tools so ChatGPT does not ask to confirm them', async () => {
+    const { tools } = await (await connect('t-miguel')).listTools();
+    const ro = tools.filter((t) => t.annotations?.readOnlyHint).map((t) => t.name).sort();
+    expect(ro).toEqual(['list_decisions', 'list_team', 'list_workstreams', 'pending', 'search_context']);
+  });
+
+  it('the record tool names the company and refuses other topics', async () => {
+    const { tools } = await (await connect('t-miguel', { ...ENV, COMPANY_NAME: 'Scooli' })).listTools();
+    const d = tools.find((t) => t.name === 'record')!.description!;
+    expect(d).toContain('Only information about Scooli (its product, team, decisions and work); never personal matters or other topics.');
+    expect(d).toContain('If asked to save something that is not about Scooli, do not call this tool; say why.');
+  });
+
+  it('without COMPANY_NAME it says "the company"', async () => {
+    const { tools } = await (await connect('t-miguel')).listTools();
+    expect(tools.find((t) => t.name === 'record')!.description).toContain('Only information about the company');
+  });
+});
