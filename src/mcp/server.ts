@@ -57,17 +57,19 @@ async function run(fn: () => Promise<string>) {
 
 const list = (entries: Entry[]) => (entries.length ? entries.map(formatEntry).join('\n\n') : 'No results.');
 
-export function buildMcpServer(store: Store, actor: Person, summary: string | undefined, openDashboard: () => Promise<string>): McpServer {
+export function buildMcpServer(store: Store, actor: Person, summary: string | undefined, openDashboard: () => Promise<string>, company = 'the company'): McpServer {
   const memory = new Memory(store);
   const instructions = summary ? `${INSTRUCTIONS}\n\n${summary}` : INSTRUCTIONS;
   const server = new McpServer({ name: 'samepage', version: '0.1.0' }, { instructions });
 
   server.registerTool('search_context', {
+    annotations: { readOnlyHint: true },
     description: 'Search the shared team memory (SamePage): what the team decided, thinks or follows (decisions, views, principles, explorations).',
     inputSchema: z.object({ query: z.string(), area: z.string().optional(), limit }),
   }, (a) => run(async () => list(await store.search(a.query, { area: a.area, limit: a.limit }))));
 
   server.registerTool('list_decisions', {
+    annotations: { readOnlyHint: true },
     description: 'List recorded decisions, newest first.',
     inputSchema: z.object({
       area: z.string().optional(),
@@ -76,15 +78,18 @@ export function buildMcpServer(store: Store, actor: Person, summary: string | un
     }),
   }, (a) => run(async () => list(await store.listEntries({ type: 'decision', status: a.status, area: a.area, limit: a.limit }))));
 
-  server.registerTool('list_team', { description: 'List the team members (ids to use as authors).' },
+  server.registerTool('list_team', { description: 'List the team members (ids to use as authors).', annotations: { readOnlyHint: true } },
     () => run(async () => (await store.listPeople()).filter((p) => !p.isSystem).map((p) => `${p.id}: ${p.name}`).join('\n')));
 
   server.registerTool('record', {
-    description: 'Save to the shared team memory (SamePage) — use when asked to record/save/remember something about the company: a decision, view, principle, exploration, workstream (a tracked piece of work) or update (a progress note on a workstream).',
+    // Chat apps (ChatGPT) read tool descriptions, not always the instructions, and their chats are often off-topic.
+    description: 'Save to the shared team memory (SamePage) — use when asked to record/save/remember something about the company: a decision, view, principle, exploration, workstream (a tracked piece of work) or update (a progress note on a workstream). '
+      + `Only information about ${company} (its product, team, decisions and work); never personal matters or other topics. If asked to save something that is not about ${company}, do not call this tool; say why.`,
     inputSchema: z.object(recordFields),
   }, (a) => run(async () => `Recorded ${(await memory.record(actor, toRecordInput(a))).id}`));
 
   server.registerTool('list_workstreams', {
+    annotations: { readOnlyHint: true },
     description: 'List workstreams (tracked pieces of work), newest first.',
     inputSchema: z.object({ status: z.enum(['in_progress', 'blocked', 'done']).optional(), limit }),
   }, (a) => run(async () => list(await store.listEntries({ type: 'workstream', status: a.status, limit: a.limit }))));
@@ -137,6 +142,7 @@ export function buildMcpServer(store: Store, actor: Person, summary: string | un
   }));
 
   server.registerTool('pending', {
+    annotations: { readOnlyHint: true },
     description: "List SamePage's open questions for you: things it captured automatically but was unsure about.",
   }, () => run(async () => {
     const open = await store.listPending(actor.id);
