@@ -26,7 +26,7 @@ export function createApp(getStore: (env: Env) => Store) {
   // Public: the join code is the credential.
   app.route('/join', joinRoutes(getStore));
   // Public: OAuth discovery, registration and token exchange for chat apps.
-  app.route('/', oauthRoutes());
+  app.route('/', oauthRoutes(getStore));
 
   app.use('*', async (c, next) => {
     const token = /^Bearer (.+)$/.exec(c.req.header('Authorization') ?? '')?.[1];

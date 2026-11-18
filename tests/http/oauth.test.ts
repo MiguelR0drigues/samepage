@@ -1,6 +1,6 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApp, sha256Hex } from '../../src/http/app';
-import { readClientId, s256 } from '../../src/http/oauth';
+import { CODE_TTL_S, issueClientId, issueCode, readClientId, s256 } from '../../src/http/oauth';
 import { PostgresStore } from '../../src/storage/postgres/store';
 import { createTestDb } from '../helpers/db';
 import { ENV } from '../dashboard/helpers';
@@ -81,5 +81,74 @@ describe('OAuth discovery and registration', () => {
 
   it('s256 matches the RFC 7636 example', async () => {
     expect(await s256('dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk')).toBe('E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM');
+  });
+});
+
+describe('OAuth token endpoint', () => {
+  const verifier = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk';
+  const redirectUri = 'https://chatgpt.com/cb';
+  let clientId: string;
+  let code: string;
+
+  beforeEach(async () => {
+    clientId = await issueClientId({ redirectUris: [redirectUri], name: 'ChatGPT' }, ENV.DASHBOARD_SECRET);
+    code = await issueCode({ personId: 'miguel', clientId, redirectUri, challenge: await s256(verifier) }, ENV.DASHBOARD_SECRET);
+  });
+  afterEach(() => vi.useRealTimers());
+
+  const token = (form: Record<string, string>, env: object = ENV) => app.request('http://t/oauth/token',
+    { method: 'POST', body: new URLSearchParams({ grant_type: 'authorization_code', ...form }) }, env);
+  const valid = () => ({ code, redirect_uri: redirectUri, client_id: clientId, code_verifier: verifier });
+  const mcpAs = (t: string) => app.request('http://t/mcp', { method: 'POST',
+    headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'list_team', arguments: {} } }) }, ENV);
+
+  it('exchanges a valid code for a token that works on /mcp as that person', async () => {
+    const res = await token(valid());
+    expect(res.status).toBe(200);
+    expect(res.headers.get('cache-control')).toBe('no-store');
+    const b = await res.json() as { access_token: string; token_type: string };
+    expect(b.token_type).toBe('Bearer');
+    expect(await store.findPersonByTokenHash(await sha256Hex(b.access_token))).toMatchObject({ id: 'miguel' });
+    expect((await mcpAs(b.access_token)).status).toBe(200);
+  });
+
+  it('the Claude Code token keeps working after a ChatGPT connection', async () => {
+    await token(valid());
+    expect((await mcpAs('t-miguel')).status).toBe(200);
+  });
+
+  it('invalid_grant for a wrong verifier, other client, other redirect or tampered code', async () => {
+    const otherClient = await issueClientId({ redirectUris: [redirectUri], name: 'Other' }, ENV.DASHBOARD_SECRET);
+    for (const over of [{ code_verifier: 'x'.repeat(43) }, { client_id: otherClient }, { redirect_uri: 'https://chatgpt.com/other' }, { code: `${code}x` }]) {
+      const res = await token({ ...valid(), ...over });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: 'invalid_grant' });
+    }
+  });
+
+  it('invalid_grant for an expired code', async () => {
+    vi.useFakeTimers({ now: Date.now() + (CODE_TTL_S + 5) * 1000 });
+    expect(await (await token(valid())).json()).toEqual({ error: 'invalid_grant' });
+  });
+
+  it('invalid_grant when the person is gone or is a system actor', async () => {
+    await store.addPerson({ id: 'meet', name: 'Meet', isSystem: true }, await sha256Hex('t-meet'));
+    for (const personId of ['ghost', 'meet']) {
+      const c = await issueCode({ personId, clientId, redirectUri, challenge: await s256(verifier) }, ENV.DASHBOARD_SECRET);
+      expect(await (await token({ ...valid(), code: c })).json()).toEqual({ error: 'invalid_grant' });
+    }
+  });
+
+  it('unsupported_grant_type for refresh_token; invalid_request when a field is missing', async () => {
+    expect(await (await token({ ...valid(), grant_type: 'refresh_token' })).json()).toEqual({ error: 'unsupported_grant_type' });
+    const { code_verifier: _, ...missing } = valid();
+    expect(await (await token(missing)).json()).toEqual({ error: 'invalid_request' });
+  });
+
+  it('404 JSON when DASHBOARD_SECRET is unset', async () => {
+    const res = await token(valid(), NO_SECRET);
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'oauth not configured' });
   });
 });
