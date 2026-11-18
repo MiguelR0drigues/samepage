@@ -499,3 +499,12 @@ export const tally = (people: Person[], e: Entry) => {
   return html`<span class="tally" role="img" aria-label="${label}" title="${label}">${s.map((g) =>
     html`<span class="g ${g.tone}">${g.members.map(() => html`<i></i>`)}</span>`)}<span class="score" aria-hidden="true">${score(s)}</span></span>`;
 };
+
+// OAuth consent for a chat app (ChatGPT): who connects, and where the code goes.
+export const consentPage = async (a: { clientName: string; redirectHost: string; personName: string; params: Record<string, string> }) =>
+  new Response(await html`${head('Connect · SamePage')}<body><div class="bare"><div class="card"><span class="brand">${SYMBOL('#14213D')}SamePage</span>
+<p>Connect <strong>${a.clientName}</strong> (${a.redirectHost}) to SamePage as <strong>${a.personName}</strong>?</p>
+<p>It will read the team memory and save to it when you ask, under your name.</p>
+<form method="post" action="/dashboard/oauth/authorize"><p>${Object.entries(a.params).map(([k, v]) => html`<input type="hidden" name="${k}" value="${v}">`)}
+<button class="go" name="decision" value="allow">Allow</button> <button name="decision" value="cancel">Cancel</button></p></form>
+</div></div></body></html>`, { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' } });

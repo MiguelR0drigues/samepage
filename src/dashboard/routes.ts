@@ -3,10 +3,11 @@ import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { csrf } from 'hono/csrf';
 import type { Entry, Person } from '../domain/types';
 import type { Env } from '../http/app';
+import { issueCode, readClientId } from '../http/oauth';
 import { Memory, MemoryError } from '../service/memory';
 import type { Store } from '../storage/store';
 import { readSession, redeemLink, SESSION_TTL_S, sessionToken } from './auth';
-import { message, THEMES, type Theme, type Viewer } from './html';
+import { consentPage, message, THEMES, type Theme, type Viewer } from './html';
 import { entryPage, homePage, proposalsPage, teamPage, viewsPage, workstreamPage } from './pages';
 
 export type DashVars = { store: Store; memory: Memory; person: Person; people: Person[]; openProposals: number };
@@ -33,7 +34,7 @@ const STATUSES = ['in_progress', 'blocked', 'done'] as const;
 const VISIT_TTL_S = 1800;
 const FIRST_VISIT_MS = 7 * 86_400_000;
 const EXPIRED = 'This sign-in link has expired or was already used. Ask your agent to open the dashboard again.';
-const SIGN_IN = 'Sign in by asking your agent to open the dashboard (open_dashboard tool).';
+const SIGN_IN = 'Sign in by asking your agent to open the dashboard (open_dashboard tool), then reload this page.';
 
 export function dashboardRoutes(getStore: (env: Env) => Store) {
   const app = new Hono<{ Bindings: Env; Variables: DashVars }>();
@@ -77,6 +78,38 @@ export function dashboardRoutes(getStore: (env: Env) => Store) {
     deleteCookie(c, 'sp_session', { path: '/dashboard', secure: true });
     deleteCookie(c, 'sp_visit', { path: '/dashboard' });
     return c.redirect('/dashboard', 303);
+  });
+
+  // OAuth consent (chat apps): never redirect before redirect_uri is proven to belong to the client.
+  const authorizeParams = async (q: Record<string, unknown>, secret: string) => {
+    const s = (k: string) => (typeof q[k] === 'string' ? q[k] : '');
+    const client = await readClientId(s('client_id'), secret);
+    if (!client || !client.redirectUris.includes(s('redirect_uri'))) return null;
+    if (s('response_type') !== 'code' || s('code_challenge_method') !== 'S256' || !s('code_challenge')) return null;
+    return { client, params: { response_type: 'code', client_id: s('client_id'), redirect_uri: s('redirect_uri'),
+      code_challenge: s('code_challenge'), code_challenge_method: 'S256', state: s('state') } };
+  };
+  const BAD_REQUEST = 'This connection request is not valid. Start again from the app you were connecting.';
+
+  app.get('/oauth/authorize', async (c) => {
+    const a = await authorizeParams(c.req.query(), c.env.DASHBOARD_SECRET!);
+    if (!a) return message(400, BAD_REQUEST);
+    return consentPage({ clientName: a.client.name, redirectHost: new URL(a.params.redirect_uri).host,
+      personName: c.get('person').name, params: a.params });
+  });
+
+  app.post('/oauth/authorize', async (c) => {
+    const form = await c.req.parseBody();
+    const secret = c.env.DASHBOARD_SECRET!;
+    const a = await authorizeParams(form, secret);
+    if (!a) return message(400, BAD_REQUEST);
+    const back = new URL(a.params.redirect_uri);
+    if (form.decision === 'allow') {
+      back.searchParams.set('code', await issueCode({ personId: c.get('person').id, clientId: a.params.client_id,
+        redirectUri: a.params.redirect_uri, challenge: a.params.code_challenge }, secret));
+    } else back.searchParams.set('error', 'access_denied');
+    if (a.params.state) back.searchParams.set('state', a.params.state);
+    return c.redirect(back.toString(), 302);
   });
 
   app.post('/theme', async (c) => {
