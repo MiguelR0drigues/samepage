@@ -45,8 +45,8 @@ export async function s256(verifier: string): Promise<string> {
   return btoa(String.fromCharCode(...digest)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-// Registration is open, so only ChatGPT's own redirect host may get a consent page (no look-alike apps).
-const CHAT_APP_HOSTS = ['chatgpt.com'];
+// Registration is open, so only known chat apps' redirect hosts (ChatGPT, Claude web) get a consent page: no look-alike apps.
+const CHAT_APP_HOSTS = ['chatgpt.com', 'claude.ai', 'claude.com'];
 const isChatApp = (u: string) => URL.canParse(u) && new URL(u).protocol === 'https:' && CHAT_APP_HOSTS.includes(new URL(u).hostname);
 
 export function oauthRoutes(getStore: (env: Env) => Store) {

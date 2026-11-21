@@ -157,6 +157,8 @@ Teammates who also brainstorm in ChatGPT (browser) can use the same memory there
 2. In ChatGPT (a paid plan with developer mode), add a custom connector with the URL `https://<your-worker>/mcp` and OAuth.
 3. ChatGPT opens a SamePage page: *"Connect ChatGPT as <you>?"*. Choose **Allow**.
 
+The same works in Claude on the web (claude.ai): Settings → Connectors → add a custom connector with the same URL.
+
 In ChatGPT the memory is read freely, and saved **only when you ask** and only about your company (ChatGPT also asks you to confirm each save). Nothing is captured automatically there.
 
 ## Self-hosting

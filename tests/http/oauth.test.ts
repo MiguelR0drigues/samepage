@@ -58,6 +58,12 @@ describe('OAuth discovery and registration', () => {
     }
   });
 
+  it('registers Claude web (claude.ai) as a chat app', async () => {
+    for (const uri of ['https://claude.ai/api/mcp/auth_callback', 'https://claude.com/api/mcp/auth_callback']) {
+      expect((await register({ client_name: 'Claude', redirect_uris: [uri] })).status).toBe(201);
+    }
+  });
+
   it('only registers ChatGPT redirect hosts, so a look-alike app cannot get a consent page', async () => {
     for (const uri of ['https://chatgpt-connect.app/cb', 'https://chatgpt.com.evil.example/cb', 'https://evil.example/chatgpt.com']) {
       const res = await register({ client_name: 'ChatGPT', redirect_uris: [uri] });
